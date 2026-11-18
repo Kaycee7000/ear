@@ -41,9 +41,13 @@ class Task(Evidence):
         return self
 
 
+# Short quotes keep designs within the output limit: small models otherwise copy whole sources.
+Quote = Annotated[str, StringConstraints(min_length=1, max_length=160)]
+
+
 class Citation(Record):
     source_id: Identifier
-    quote: Text
+    quote: Quote
 
 
 class Component(Record):
@@ -85,7 +89,8 @@ Account for the main actors, data stores, and flows described in the sources.
 Combine related evidence into named components with stable short IDs. Explain
 each component's purpose. Use component IDs as source and target of each
 supported relationship. Cite a short, exact substring and its source_id for
-each component and relationship. Put unsupported design choices in assumptions
+each component and relationship; copy each quote character for character from
+within a single line of its source. Put unsupported design choices in assumptions
 and unresolved requirements in open_questions. Use empty arrays where appropriate.
 Return a JSON object with components, relationships, assumptions and open_questions."""
 
@@ -98,7 +103,11 @@ def synthesize(task: Task) -> Design:
         {"role": "user", "content": task.model_dump_json()},
     ]
     endpoint = os.getenv("EAR_MODEL_URL", "http://127.0.0.1:8080").rstrip("/")
-    with httpx.Client(base_url=endpoint, timeout=240, trust_env=False) as client:
+    # Optional bearer key, for model servers started with --api-key (for example an agent's own llama.cpp server).
+    headers = {"Authorization": "Bearer " + os.environ["EAR_MODEL_KEY"]} if os.getenv("EAR_MODEL_KEY") else {}
+    # CPU servers need longer than a GPU for a full design; cpu-worker.sh raises this.
+    timeout = float(os.getenv("EAR_MODEL_TIMEOUT", "240"))
+    with httpx.Client(base_url=endpoint, timeout=timeout, trust_env=False, headers=headers) as client:
         for attempt in range(2):
             response = client.post("/v1/chat/completions", json={
                 "model": os.getenv("EAR_MODEL_NAME", "ear-model"),

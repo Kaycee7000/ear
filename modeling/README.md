@@ -32,7 +32,8 @@ In another terminal, from the same module directory, run the sample.
 ```
 
 For an existing compatible model server, set `EAR_MODEL_URL` to its base URL
-and `EAR_MODEL_NAME` to the served model name. It must support
+and `EAR_MODEL_NAME` to the served model name, and `EAR_MODEL_KEY` if the
+server requires a bearer key (`--api-key`). It must support
 `/v1/chat/completions` with JSON Schema output. Keep the local server on
 loopback when working with private evidence.
 
@@ -64,18 +65,21 @@ goal and sources must fit within 8 KiB UTF-8. Preselect relevant excerpts for
 larger datasets. Invalid model output gets one correction attempt. Local
 inference needs no GitHub or B2 credentials.
 
-## Configure GitHub GPU execution
+## Configure GitHub execution
 
 1. Put the workflow and its module on the repository's default branch and
    enable Actions. A dispatch creates one workflow run. Pushes and pull
-   requests do not trigger GPU work.
-2. Choose a Linux x64 runner with Docker, a compatible NVIDIA driver and the
-   NVIDIA Container Toolkit. Set the Actions repository variable
-   `EAR_MODELING_GPU_RUNNER` to its label. The default is
-   `ear-modeling-gpu`. Hosted GPU larger runners require an organization on
-   GitHub Team or Enterprise Cloud. For a personal repository, register a
-   dedicated, preferably ephemeral, self-hosted GPU runner or run locally.
-   Configure self-hosted capacity for trusted code only.
+   requests do not trigger modeling work.
+2. By default the job runs on GitHub's free `ubuntu-latest` runner (free and
+   unlimited for public repositories). `worker.sh` picks `cpu-worker.sh`
+   there: the same pinned GGUF on a digest-pinned llama.cpp CPU server, with
+   the model kept in `actions/cache`. To use a GPU instead, choose a Linux x64
+   runner with Docker, a compatible NVIDIA driver and the NVIDIA Container
+   Toolkit and set the Actions repository variable `EAR_MODELING_GPU_RUNNER`
+   to its label; `worker.sh` then runs `gpu-worker.sh`. Hosted GPU larger
+   runners require an organization on GitHub Team or Enterprise Cloud. For a
+   personal repository, register a dedicated, preferably ephemeral,
+   self-hosted GPU runner. Configure self-hosted capacity for trusted code only.
 3. Use a private Backblaze B2 bucket and bucket-scoped application keys.
    Configure the settings below. Supply the local settings to the MCP server
    through the agent's environment. Keep credentials out of version control.
@@ -96,7 +100,7 @@ PY
 
 | Setting | Local agent | GitHub job |
 | --- | --- | --- |
-| `EAR_B2_BUCKET`, `EAR_B2_REGION` | Environment | Actions secrets with the same names |
+| `EAR_B2_BUCKET`, `EAR_B2_REGION` | Environment (region as `us-east-005` or the endpoint `s3.us-east-005.backblazeb2.com`) | Actions secrets with the same names |
 | `EAR_B2_KEY_ID`, `EAR_B2_APPLICATION_KEY` | Read source and result objects, write request snapshots | Actions secrets for a worker key that reads requests and writes results |
 | `EAR_GITHUB_TOKEN` | Fine-grained token for this repository with Actions write access | Unused |
 | `EAR_GITHUB_REPO` | Defaults to `Kaycee7000/ear` | Unused |
@@ -117,6 +121,21 @@ the current attempt. There are no public design artifacts. The runner has a
 to your retention needs. Allow a fresh runner time to download the image and
 weights. Use hosted Actions jobs for software development work associated
 with the repository.
+
+## Evidence from binaries and model checks
+
+The `r2-ghidra-ci/extract` job writes evidence for this tool under
+`ear-modeling/evidence/r2/`, so `model_design` can model a binary; the
+`pipeline/` tools chain the two automatically. To check that a model can do
+this job, `make_review_suite.py` generates `model-review/suites/ear-design.yaml`
+from this module (same instruction, same schema, same citation rules through
+model-review's `ear_design` check). Regenerate it after changing `design.py` or
+`examples/`, then review a model on GitHub's free runner:
+
+```bash
+.venv/bin/python make_review_suite.py
+model-review review --model hf.co/Qwen/Qwen2.5-3B-Instruct-GGUF:Q4_K_M --suite ear-design
+```
 
 ## Test
 

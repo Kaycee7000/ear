@@ -27,6 +27,9 @@ class Store:
     def __init__(self):
         self.bucket = required("EAR_B2_BUCKET")
         region = required("EAR_B2_REGION")
+        # Accept the S3 endpoint as Backblaze shows it (s3.us-east-005.backblazeb2.com) as well as the region.
+        endpoint = re.fullmatch(r"(?:https://)?s3\.([a-z0-9-]+)\.backblazeb2\.com/?", region)
+        region = endpoint.group(1) if endpoint else region
         if not re.fullmatch(r"[a-z0-9-]+", region):
             raise ValueError("Invalid B2 region.")
         self.client = boto3.client(
@@ -39,20 +42,21 @@ class Store:
                           response_checksum_validation="when_required"),
         )
 
-    def read(self, key: str) -> bytes:
+    def read(self, key: str, max_bytes: int = MAX_OBJECT_BYTES) -> bytes:
         result = self.client.get_object(Bucket=self.bucket, Key=key)
         with closing(result["Body"]) as body:
-            if result["ContentLength"] > MAX_OBJECT_BYTES:
+            if result["ContentLength"] > max_bytes:
                 raise ValueError("Stored JSON exceeds the size limit.")
-            data = body.read(MAX_OBJECT_BYTES + 1)
-        if len(data) > MAX_OBJECT_BYTES:
+            data = body.read(max_bytes + 1)
+        if len(data) > max_bytes:
             raise ValueError("Stored JSON exceeds the size limit.")
         return data
 
-    def write(self, key: str, obj: bytes) -> None:
-        if len(obj) > MAX_OBJECT_BYTES:
+    def write(self, key: str, obj: bytes, max_bytes: int = MAX_OBJECT_BYTES,
+              content_type: str = "application/json") -> None:
+        if len(obj) > max_bytes:
             raise ValueError("Result exceeds storage limit.")
-        self.client.put_object(Bucket=self.bucket, Key=key, Body=obj, ContentType="application/json")
+        self.client.put_object(Bucket=self.bucket, Key=key, Body=obj, ContentType=content_type)
 
 
 def repo_api() -> str:
