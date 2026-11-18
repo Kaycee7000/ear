@@ -1,0 +1,70 @@
+[
+  {
+    "type": "function",
+    "function": {
+      "name": "review_model",
+      "description": "Review (test and validate) an AI model by running a test suite against it on GitHub Actions. Returns a verdict (passed / failed / error) with failed cases, or state queued/running plus a run_id if it is not finished within wait_seconds; then call get_review with that run_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "model": {
+            "type": "string",
+            "description": "Model to review: an Ollama tag like 'qwen2.5:0.5b', 'hf.co/<user>/<repo>:<quant>', or the model name served at `endpoint`."
+          },
+          "suite": {
+            "type": "string",
+            "description": "Test suite name (see list_suites). Default 'smoke'.",
+            "default": "smoke"
+          },
+          "backend": {
+            "type": "string",
+            "enum": ["ollama", "endpoint", "mock"],
+            "description": "How the runner serves the model. 'ollama' pulls and serves it; 'endpoint' uses an existing OpenAI-compatible server; 'mock' tests the pipeline only.",
+            "default": "ollama"
+          },
+          "endpoint": {
+            "type": "string",
+            "description": "OpenAI-compatible base URL, only for backend='endpoint'."
+          },
+          "runner": {
+            "type": "string",
+            "description": "Runner label, or a JSON list of labels such as [\"self-hosted\",\"gpu\"]. Default: the free 'ubuntu-latest' CPU runner."
+          },
+          "wait_seconds": {
+            "type": "integer",
+            "description": "How long to wait for the verdict before returning a run_id to poll. Default 120.",
+            "default": 120
+          }
+        },
+        "required": ["model"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "get_review",
+      "description": "Get the state and, once finished, the verdict of a review started with review_model.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "run_id": {"type": "integer", "description": "run_id returned by review_model."},
+          "wait_seconds": {
+            "type": "integer",
+            "description": "Wait up to this long for the run to finish. Default 0 (check once).",
+            "default": 0
+          }
+        },
+        "required": ["run_id"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "list_suites",
+      "description": "List the test suites available for review_model.",
+      "parameters": {"type": "object", "properties": {}}
+    }
+  }
+]

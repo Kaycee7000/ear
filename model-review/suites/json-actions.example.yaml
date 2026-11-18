@@ -1,0 +1,68 @@
+# EXAMPLE suite: validating structured actions from an agent model, here one that
+# drives a game controller from a radar snapshot. Copy this file, then replace the
+# system prompt, the action schema and the cases with your model's real format.
+#
+# Three kinds of test are shown:
+#   1. format: every reply must be strict JSON matching the action schema
+#   2. judgment: in a clear situation, the chosen action must be a sensible one
+#   3. speed: each decision must come back within a time budget
+name: json-actions.example
+description: Example. Agent replies must be strict JSON actions, sensible in clear situations, and fast.
+pass_threshold: 1.0
+gates:
+  max_p95_latency_ms: 5000   # tighten to your real per-decision budget on your own hardware
+
+# Shared schema, reused below through YAML anchors (x-* keys are ignored by the loader).
+x-action-schema: &action_schema
+  type: object
+  required: [move, action]
+  additionalProperties: false
+  properties:
+    move:
+      type: array
+      minItems: 2
+      maxItems: 2
+      items: {type: number, minimum: -1, maximum: 1}
+    action:
+      enum: [none, pass, shoot, tackle, sprint]
+
+defaults:
+  system: >-
+    You control one player in a top-down soccer game. Each message is a radar
+    snapshot as JSON (positions in metres, +y points at the opponent goal).
+    Reply with ONLY a JSON object, no prose and no code fence:
+    {"move": [x, y], "action": "none" | "pass" | "shoot" | "tackle" | "sprint"}
+    where x and y are numbers from -1 to 1.
+  params:
+    temperature: 0
+    max_tokens: 60
+  timeout_s: 60
+
+cases:
+  - id: format_open_play
+    description: Any reasonable action is fine; the reply just has to be valid.
+    prompt: '{"self": {"pos": [0, -20], "has_ball": true}, "teammates": [[12, -5]], "opponents": [[0, -10]], "opponent_goal": [0, 50]}'
+    checks:
+      - json_schema: *action_schema
+        strict: true
+      - max_latency_ms: 5000
+
+  - id: judgment_open_goal
+    description: Ball at our feet, 8 m from goal, nobody in the way. Should shoot.
+    prompt: '{"self": {"pos": [0, 42], "has_ball": true}, "teammates": [], "opponents": [[20, 10]], "opponent_goal": [0, 50]}'
+    checks:
+      - json_schema:
+          allOf:
+            - *action_schema
+            - properties: {action: {const: shoot}}
+        strict: true
+
+  - id: judgment_defend
+    description: Opponent has the ball right next to us. We can't pass or shoot without the ball.
+    prompt: '{"self": {"pos": [0, -30], "has_ball": false}, "ball_owner": "opponent", "ball": [1, -31], "teammates": [], "opponents": [[1, -31]], "opponent_goal": [0, 50]}'
+    checks:
+      - json_schema:
+          allOf:
+            - *action_schema
+            - properties: {action: {enum: [tackle, sprint, none]}}
+        strict: true

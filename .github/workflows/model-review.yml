@@ -1,0 +1,64 @@
+# Entry point for the model-review tool. Everything else lives in model-review/.
+# GitHub only discovers workflows in .github/workflows/, so this thin file is the
+# one piece that has to sit outside the folder.
+#
+# Trigger: workflow_dispatch only. It never runs on push or pull_request, so it
+# does not interfere with anyone else's work in this repo. Agents start it through
+# the REST API (see model-review/README.md); people can start it from the Actions tab.
+name: model-review
+run-name: "model-review ${{ inputs.model }} / ${{ inputs.suite }} [${{ inputs.request_id || 'manual' }}]"
+
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: "Model to review: an Ollama tag (qwen2.5:0.5b), hf.co/<user>/<repo>[:quant], or the model name served at `endpoint`"
+        required: true
+        type: string
+      suite:
+        description: "Test suite in model-review/suites (file name without .yaml)"
+        required: true
+        default: smoke
+        type: string
+      backend:
+        description: "How the runner serves the model"
+        required: true
+        default: ollama
+        type: choice
+        options: [ollama, endpoint, mock]
+      endpoint:
+        description: "OpenAI-compatible base URL, only for backend=endpoint (e.g. http://127.0.0.1:11434/v1)"
+        required: false
+        type: string
+      runner:
+        description: 'Runner label, or a JSON array of labels such as ["self-hosted","gpu"]'
+        required: false
+        default: ubuntu-latest
+        type: string
+      request_id:
+        description: "Opaque id set by the agent client so it can find this run"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  review:
+    runs-on: ${{ startsWith(inputs.runner, '[') && fromJSON(inputs.runner) || (inputs.runner || 'ubuntu-latest') }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: model-review
+          persist-credentials: false
+
+      - id: review
+        uses: ./model-review
+        with:
+          model: ${{ inputs.model }}
+          suite: ${{ inputs.suite }}
+          backend: ${{ inputs.backend }}
+          endpoint: ${{ inputs.endpoint }}
+          api-key: ${{ secrets.MODEL_REVIEW_API_KEY }}
+          request-id: ${{ inputs.request_id }}
