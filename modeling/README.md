@@ -12,7 +12,7 @@ Review whether the cited text supports the interpretation.
 From the repository root, install Python 3.12 dependencies in the module.
 
 ```bash
-cd .github/workflows/modeling
+cd modeling
 python3.12 -m venv .venv
 .venv/bin/python -m pip install -r requirements-agent.txt
 ```
@@ -46,8 +46,8 @@ environments use `Scripts/python.exe`.
 {
   "mcpServers": {
     "ear-modeling": {
-      "command": "/absolute/path/ear/.github/workflows/modeling/.venv/bin/python",
-      "args": ["/absolute/path/ear/.github/workflows/modeling/server.py"]
+      "command": "/absolute/path/ear/modeling/.venv/bin/python",
+      "args": ["/absolute/path/ear/modeling/server.py"]
     }
   }
 }
