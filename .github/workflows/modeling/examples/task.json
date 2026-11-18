@@ -1,0 +1,7 @@
+{
+  "goal": "Design the components and data flow for an evidence capture tool.",
+  "sources": [
+    {"id": "capture", "text": "The collector stores each captured page in the evidence bucket."},
+    {"id": "index", "text": "The indexer reads pages from the evidence bucket and records their titles."}
+  ]
+}
