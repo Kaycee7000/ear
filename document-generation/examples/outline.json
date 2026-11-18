@@ -1,0 +1,16 @@
+{
+  "title": "Field service handoff",
+  "subtitle": "Weekend operations brief",
+  "author": "Operations team",
+  "sections": [
+    {
+      "heading": "What changed",
+      "paragraphs": ["Store managers now receive a single handoff at the start of each shift."],
+      "bullets": ["The service desk owns the outage log.", "Field technicians confirm restoration before closing a ticket."]
+    },
+    {
+      "heading": "Next shift",
+      "bullets": ["Review the open incidents.", "Confirm the on-call contact at each location."]
+    }
+  ]
+}

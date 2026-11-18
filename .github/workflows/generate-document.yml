@@ -1,0 +1,49 @@
+name: Generate one document
+run-name: ear-document-${{ inputs.job_id }}
+on:
+  workflow_dispatch:
+    inputs:
+      job_id:
+        description: Agent-created UUIDv4 for a staged private outline
+        type: string
+        required: true
+      request_sha256:
+        description: SHA-256 of the staged request bytes
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  render:
+    if: github.ref == format('refs/heads/{0}', vars.EAR_DOCUMENT_TRUSTED_REF || github.event.repository.default_branch)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    container:
+      image: python:3.12-slim-bookworm@sha256:0f086103b026048cc50cb5da25ec435c023c5241a83fc44daea593377abc61c4
+    defaults:
+      run:
+        shell: sh
+        working-directory: document-generation
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Install document renderers
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          apt-get update -qq
+          apt-get install -y --no-install-recommends libreoffice-writer fonts-dejavu-core fonts-noto-core fonts-noto-cjk
+          python -m pip install --no-cache-dir --disable-pip-version-check . -r worker/requirements.txt
+      - name: Render outline and publish to Backblaze B2
+        env:
+          EAR_DOCUMENT_B2_REGION: ${{ vars.EAR_DOCUMENT_B2_REGION || secrets.EAR_B2_REGION }}
+          EAR_DOCUMENT_B2_BUCKET: ${{ vars.EAR_DOCUMENT_B2_BUCKET || secrets.EAR_B2_BUCKET }}
+          EAR_DOCUMENT_PREFIX: ${{ vars.EAR_DOCUMENT_PREFIX || 'documents' }}
+          EAR_DOCUMENT_B2_REQUEST_READ_KEY_ID: ${{ secrets.EAR_DOCUMENT_B2_REQUEST_READ_KEY_ID || secrets.EAR_B2_KEY_ID }}
+          EAR_DOCUMENT_B2_REQUEST_READ_KEY: ${{ secrets.EAR_DOCUMENT_B2_REQUEST_READ_KEY || secrets.EAR_B2_APPLICATION_KEY }}
+          EAR_DOCUMENT_B2_OUTPUT_WRITE_KEY_ID: ${{ secrets.EAR_DOCUMENT_B2_OUTPUT_WRITE_KEY_ID || secrets.EAR_B2_KEY_ID }}
+          EAR_DOCUMENT_B2_OUTPUT_WRITE_KEY: ${{ secrets.EAR_DOCUMENT_B2_OUTPUT_WRITE_KEY || secrets.EAR_B2_APPLICATION_KEY }}
+        run: python worker/run.py
