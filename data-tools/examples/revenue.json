@@ -1,0 +1,5 @@
+{
+  "sql": "SELECT region, ROUND(SUM(amount), 2) AS revenue FROM sales GROUP BY region ORDER BY revenue DESC",
+  "export": "xlsx",
+  "chart": {"kind": "bar", "x": "region", "y": "revenue", "title": "Revenue by region"}
+}

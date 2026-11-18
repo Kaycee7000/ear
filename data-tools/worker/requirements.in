@@ -1,0 +1,9 @@
+duckdb
+pyarrow
+sqlglot
+openpyxl
+defusedxml
+matplotlib
+boto3==1.44.5
+pydantic==2.13.4
+pillow
