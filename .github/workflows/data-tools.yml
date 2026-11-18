@@ -1,0 +1,76 @@
+name: EAR data tools
+run-name: ${{ github.event_name == 'workflow_dispatch' && format('ear-data-{0}', inputs.job_id) || 'Build data toolbox' }}
+on:
+  push:
+    branches: [main]
+    paths:
+      - "data-tools/**"
+      - ".github/workflows/data-tools.yml"
+  workflow_dispatch:
+    inputs:
+      job_id:
+        description: Agent-created private job UUID
+        required: true
+        type: string
+      request_sha256:
+        description: SHA-256 of the private B2 request
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  image:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - name: Build and test the reusable data image
+        run: |
+          image=$(sh data-tools/image-tag.sh)
+          docker build --label "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" --tag "$image" data-tools
+          python3 data-tools/smoke_image.py "$image"
+      - name: Publish the tested toolchain to GHCR
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker push "$(sh data-tools/image-tag.sh)"
+
+  analyze:
+    if: github.event_name == 'workflow_dispatch' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - name: Load the toolchain for this checkout
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          image=$(sh data-tools/image-tag.sh)
+          if ! (echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin && docker pull "$image"); then
+            docker build --tag "$image" data-tools
+          fi
+          docker image inspect --format '{{.Id}}' "$image" > "$RUNNER_TEMP/ear-data-image"
+      - name: Fetch private inputs, analyze offline and upload results
+        env:
+          EAR_DATA_B2_REGION: ${{ vars.EAR_DATA_B2_REGION || secrets.EAR_B2_REGION }}
+          EAR_DATA_B2_BUCKET: ${{ vars.EAR_DATA_B2_BUCKET || secrets.EAR_B2_BUCKET }}
+          EAR_DATA_PREFIX: ${{ vars.EAR_DATA_PREFIX || 'data' }}
+          EAR_DATA_READ_KEY_ID: ${{ secrets.EAR_DATA_INPUT_READ_KEY_ID || secrets.EAR_B2_KEY_ID }}
+          EAR_DATA_READ_KEY: ${{ secrets.EAR_DATA_INPUT_READ_KEY || secrets.EAR_B2_APPLICATION_KEY }}
+          EAR_DATA_WRITE_KEY_ID: ${{ secrets.EAR_DATA_RESULT_WRITE_KEY_ID || secrets.EAR_B2_KEY_ID }}
+          EAR_DATA_WRITE_KEY: ${{ secrets.EAR_DATA_RESULT_WRITE_KEY || secrets.EAR_B2_APPLICATION_KEY }}
+        run: python3 data-tools/runner.py "$(cat "$RUNNER_TEMP/ear-data-image")"

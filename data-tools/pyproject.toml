@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ear-data"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = ["ear-document==0.1.0"]
+[project.optional-dependencies]
+mcp = ["mcp==1.29.0"]
+[project.scripts]
+ear-data = "ear_data.cli:main"
+ear-data-mcp = "ear_data.mcp_server:main"
+[tool.setuptools]
+packages = ["ear_data"]
+[tool.setuptools.package-data]
+ear_data = ["tool_schema.json"]

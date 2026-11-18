@@ -1,0 +1,229 @@
+[
+  {
+    "type": "function",
+    "function": {
+      "name": "prepare_dataset_upload",
+      "description": "Get a short-lived B2 PUT for a dataset.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "sha256": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Sha256",
+            "type": "string"
+          },
+          "format": {
+            "enum": [
+              "csv",
+              "tsv",
+              "ndjson",
+              "parquet",
+              "xlsx"
+            ],
+            "title": "Format",
+            "type": "string"
+          },
+          "byte_size": {
+            "exclusiveMinimum": 0,
+            "maximum": 134217728,
+            "title": "Byte Size",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "sha256",
+          "format",
+          "byte_size"
+        ],
+        "title": "Upload",
+        "type": "object"
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "run_data_job",
+      "description": "Run a data plan in a disposable container.",
+      "parameters": {
+        "$defs": {
+          "Chart": {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "enum": [
+                  "bar",
+                  "line",
+                  "scatter"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "x": {
+                "maxLength": 128,
+                "minLength": 1,
+                "title": "X",
+                "type": "string"
+              },
+              "y": {
+                "maxLength": 128,
+                "minLength": 1,
+                "title": "Y",
+                "type": "string"
+              },
+              "title": {
+                "anyOf": [
+                  {
+                    "maxLength": 120,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Title"
+              }
+            },
+            "required": [
+              "kind",
+              "x",
+              "y"
+            ],
+            "title": "Chart",
+            "type": "object"
+          },
+          "Plan": {
+            "additionalProperties": false,
+            "properties": {
+              "sql": {
+                "anyOf": [
+                  {
+                    "maxLength": 12000,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Sql"
+              },
+              "profile": {
+                "anyOf": [
+                  {
+                    "pattern": "^[a-z][a-z0-9_]{0,39}$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Profile"
+              },
+              "export": {
+                "default": "parquet",
+                "enum": [
+                  "csv",
+                  "ndjson",
+                  "parquet",
+                  "xlsx"
+                ],
+                "title": "Export",
+                "type": "string"
+              },
+              "chart": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Chart"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              }
+            },
+            "title": "Plan",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "properties": {
+          "datasets": {
+            "maxProperties": 4,
+            "minProperties": 1,
+            "patternProperties": {
+              "^[a-z][a-z0-9_]{0,39}$": {
+                "pattern": "^[a-f0-9]{64}\\.(csv|tsv|ndjson|parquet|xlsx)$",
+                "type": "string"
+              }
+            },
+            "title": "Datasets",
+            "type": "object"
+          },
+          "plan": {
+            "$ref": "#/$defs/Plan"
+          },
+          "wait_seconds": {
+            "default": 0,
+            "maximum": 86400,
+            "minimum": 0,
+            "title": "Wait Seconds",
+            "type": "integer"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "pattern": "^[a-zA-Z0-9_.:-]{1,128}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Request Id"
+          }
+        },
+        "required": [
+          "datasets",
+          "plan"
+        ],
+        "title": "Submit",
+        "type": "object"
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "get_data_result",
+      "description": "Resume a data job and sign its output links.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          },
+          "wait_seconds": {
+            "default": 0,
+            "maximum": 86400,
+            "minimum": 0,
+            "title": "Wait Seconds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "job_id"
+        ],
+        "title": "Lookup",
+        "type": "object"
+      }
+    }
+  }
+]
