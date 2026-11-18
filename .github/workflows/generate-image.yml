@@ -1,0 +1,77 @@
+name: Generate one CPU image
+run-name: ear-image-${{ inputs.job_id }}
+on:
+  workflow_dispatch:
+    inputs:
+      job_id:
+        description: UUIDv4 created by the agent
+        required: true
+        type: string
+      prompt:
+        description: Text for one image (visible to GitHub)
+        required: true
+        type: string
+      seed:
+        description: Unsigned 32-bit decimal seed
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  generate:
+    if: github.ref == format('refs/heads/{0}', vars.EAR_IMAGE_TRUSTED_REF || github.event.repository.default_branch)
+    runs-on: ubuntu-24.04
+    timeout-minutes: ${{ vars.EAR_IMAGE_JOB_MINUTES && fromJSON(vars.EAR_IMAGE_JOB_MINUTES) >= 1 && fromJSON(vars.EAR_IMAGE_JOB_MINUTES) <= 30 && fromJSON(vars.EAR_IMAGE_JOB_MINUTES) || 30 }}
+    container:
+      # Docker Official Image library/python, linux/amd64 manifest for 3.12-slim-bookworm
+      image: python:3.12-slim-bookworm@sha256:0f086103b026048cc50cb5da25ec435c023c5241a83fc44daea593377abc61c4
+    defaults:
+      run:
+        shell: sh
+        working-directory: image-generation
+    env:
+      EAR_IMAGE_MODEL_ID: ${{ vars.EAR_IMAGE_MODEL_ID || 'stabilityai/sd-turbo' }}
+      EAR_IMAGE_MODEL_REVISION: ${{ vars.EAR_IMAGE_MODEL_REVISION || 'b261bac6fd2cf515557d5d0707481eafa0485ec2' }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Restore optional model weights
+        continue-on-error: true
+        if: vars.EAR_IMAGE_CACHE == 'true'
+        id: weights
+        uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: image-generation/.model-cache
+          key: ear-image-v1-${{ runner.arch }}-${{ env.EAR_IMAGE_MODEL_ID }}-${{ env.EAR_IMAGE_MODEL_REVISION }}
+      - name: Install lightweight worker bootstrap
+        run: |
+          start=$(date +%s)
+          python -m pip install --no-cache-dir --disable-pip-version-check .
+          echo "BOOTSTRAP_SECONDS=$(($(date +%s) - start))" >> "$GITHUB_ENV"
+      - name: Generate and publish to B2
+        env:
+          EAR_IMAGE_B2_REGION: ${{ vars.EAR_IMAGE_B2_REGION }}
+          EAR_IMAGE_B2_BUCKET: ${{ vars.EAR_IMAGE_B2_BUCKET }}
+          EAR_IMAGE_PREFIX: ${{ vars.EAR_IMAGE_PREFIX || 'images' }}
+          EAR_IMAGE_B2_WRITE_KEY_ID: ${{ secrets.EAR_IMAGE_B2_WRITE_KEY_ID }}
+          EAR_IMAGE_B2_WRITE_KEY: ${{ secrets.EAR_IMAGE_B2_WRITE_KEY }}
+          EAR_IMAGE_JOB_MINUTES: ${{ vars.EAR_IMAGE_JOB_MINUTES || '30' }}
+          HF_TOKEN: ${{ secrets.EAR_IMAGE_HF_TOKEN }}
+        run: python worker/run.py
+      - name: Check optional cache size
+        id: budget
+        if: success() && vars.EAR_IMAGE_CACHE == 'true' && steps.weights.outputs.cache-hit != 'true'
+        run: |
+          if [ "$(du -sk .model-cache | cut -f1)" -le 6291456 ]; then
+            echo "fits=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Save optional model weights
+        continue-on-error: true
+        if: steps.budget.outputs.fits == 'true'
+        uses: actions/cache/save@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: image-generation/.model-cache
+          key: ear-image-v1-${{ runner.arch }}-${{ env.EAR_IMAGE_MODEL_ID }}-${{ env.EAR_IMAGE_MODEL_REVISION }}
