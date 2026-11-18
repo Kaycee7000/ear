@@ -2,7 +2,7 @@
 # Lightweight reverse-engineering & binary-analysis image for GitHub Actions (ghcr.io)
 # Includes: radare2, r2ghidra (headless Ghidra decompiler via `pdg`), binutils, pytest, strace
 
-FROM debian:bookworm-slim
+FROM ubuntu:24.04
 
 LABEL org.opencontainers.image.title="r2-ghidra-ci" \
       org.opencontainers.image.description="Lightweight CI container with radare2, r2ghidra, binutils, pytest, and strace" \
