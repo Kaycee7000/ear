@@ -62,7 +62,25 @@ objdump -d -M intel ./target_bin
 strace -f -o trace.log ./target_bin
 ```
 
-### 4. Example `pytest` Integration
+### 4. Evidence extraction for the EAR pipeline (`extract/`)
+
+`extract/ear_extract.py` (standard library only, runs inside this image) turns a binary into evidence for the
+modeling tool: file facts and sections, imports, exports, ranked strings, and the Ghidra decompilation (`pdg`,
+falling back to `pdc`) of `main` and the largest functions, or of functions you name. Ghidra's local-variable
+declarations are left out of the evidence, and everything is trimmed to the modeling tool's 8 KiB task limit.
+It talks to radare2 over the `r2 -q0` pipe and only ever sends addresses, never caller text, as commands.
+
+```bash
+python3 extract/ear_extract.py --file ./target_bin --functions main,parse_args --out out/
+# out/extraction.json (everything), out/evidence.json and out/task.json (modeling format)
+```
+
+`extract/b2_worker.py` is the private job behind `.github/workflows/ear-extract.yml`: request ID in, binary from
+an https URL or the B2 bucket, extraction run with `docker run --network none` in this image, results back to B2.
+Tests: `python3 -m pytest extract/` (the real-binary test needs radare2, so run it inside the image).
+`extract/samples/notes.c` is a small program used to produce `modeling/examples/r2-notes.json`.
+
+### 5. Example `pytest` Integration
 
 ```python
 import json

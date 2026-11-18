@@ -149,7 +149,7 @@ def run_suite(suite: Suite, base_url: str, model: str, api_key: str | None = Non
         latency_ms = (time.monotonic() - start) * 1000
         if suite.strip_think:
             text = _THINK.sub("", text).strip()
-        results = [run_check(c, text, latency_ms) for c in case.checks]
+        results = [run_check(c, text, latency_ms, case.messages) for c in case.checks]
         record.update(
             passed=all(r.passed for r in results),
             latency_ms=round(latency_ms, 1),

@@ -35,6 +35,8 @@ CHECK_KINDS = {
     "min_length": "the trimmed reply has at least N characters",
     "max_length": "the trimmed reply has at most N characters",
     "max_latency_ms": "the request finished within N milliseconds",
+    "ear_design": "the reply is an EAR design (modeling tool) whose IDs, relationships and exact-quote "
+                  "citations are valid for the task JSON in the last user message",
 }
 MODIFIERS = {"ignore_case", "strict"}
 
@@ -106,9 +108,9 @@ def parse_check(spec: Any) -> Check:
                 re.compile(arg)
             except re.error as exc:
                 raise CheckError(f"invalid regex {arg!r}: {exc}") from exc
-    elif kind == "json_valid":
+    elif kind in ("json_valid", "ear_design"):
         if arg is not True:
-            raise CheckError("json_valid must be `true`")
+            raise CheckError(f"{kind} must be `true`")
     elif kind == "json_schema":
         if not isinstance(arg, dict):
             raise CheckError("json_schema needs a JSON Schema mapping")
@@ -141,7 +143,84 @@ def _fold(s: str, ignore_case: bool) -> str:
     return s.casefold() if ignore_case else s
 
 
-def run_check(check: Check, output: str, latency_ms: float | None) -> CheckResult:
+_EAR_ID = re.compile(r"^[A-Za-z0-9_-]{1,48}$")
+_EAR_LIMITS = {"components": (1, 16), "relationships": (0, 24), "assumptions": (0, 12), "open_questions": (0, 12)}
+
+
+def ear_design_problem(reply: Any, sources: dict[str, str]) -> str | None:
+    """Same rules as modeling/design.py (Design schema + check_against). Returns the first problem, or None."""
+    if not isinstance(reply, dict):
+        return "the reply is not a JSON object"
+    extra = set(reply) - set(_EAR_LIMITS)
+    if extra:
+        return f"unexpected keys {sorted(extra)}"
+    for key, (low, high) in _EAR_LIMITS.items():
+        value = reply.get(key)
+        if not isinstance(value, list) or not low <= len(value) <= high:
+            return f"{key} must be a list of {low}-{high} items"
+    for key in ("assumptions", "open_questions"):
+        if any(not isinstance(t, str) or not 1 <= len(t.strip()) <= 600 for t in reply[key]):
+            return f"{key} must hold strings of 1-600 characters"
+
+    def cited(item: dict, where: str) -> str | None:
+        evidence = item.get("evidence")
+        if not isinstance(evidence, list) or not 1 <= len(evidence) <= 4:
+            return f"{where}: evidence must be a list of 1-4 citations"
+        for cite in evidence:
+            if not isinstance(cite, dict) or set(cite) != {"source_id", "quote"}:
+                return f"{where}: each citation needs exactly source_id and quote"
+            sid, quote = cite["source_id"], cite["quote"]
+            if not isinstance(quote, str) or not 1 <= len(quote.strip()) <= 160:
+                return f"{where}: quote must be 1-160 characters"
+            if sid not in sources:
+                return f"{where}: unknown source_id {sid!r}"
+            if quote.strip() not in sources[sid]:
+                return f"{where}: quote is not an exact excerpt of source {sid!r}: {quote.strip()[:80]!r}"
+        return None
+
+    ids = []
+    for i, comp in enumerate(reply["components"]):
+        where = f"components[{i}]"
+        if not isinstance(comp, dict) or set(comp) != {"id", "purpose", "evidence"}:
+            return f"{where} needs exactly id, purpose and evidence"
+        if not isinstance(comp["id"], str) or not _EAR_ID.match(comp["id"].strip()):
+            return f"{where}: id must match {_EAR_ID.pattern}"
+        if not isinstance(comp["purpose"], str) or not 1 <= len(comp["purpose"].strip()) <= 600:
+            return f"{where}: purpose must be 1-600 characters"
+        ids.append(comp["id"].strip())
+        problem = cited(comp, where)
+        if problem:
+            return problem
+    if len(set(ids)) != len(ids):
+        return "component IDs are not unique"
+    for i, rel in enumerate(reply["relationships"]):
+        where = f"relationships[{i}]"
+        if not isinstance(rel, dict) or set(rel) != {"source", "target", "description", "evidence"}:
+            return f"{where} needs exactly source, target, description and evidence"
+        if not isinstance(rel["source"], str) or not isinstance(rel["target"], str) \
+                or rel["source"].strip() not in ids or rel["target"].strip() not in ids:
+            return f"{where}: source and target must be existing component IDs"
+        if not isinstance(rel["description"], str) or not 1 <= len(rel["description"].strip()) <= 600:
+            return f"{where}: description must be 1-600 characters"
+        problem = cited(rel, where)
+        if problem:
+            return problem
+    return None
+
+
+def _task_sources(messages: list[dict] | None) -> dict[str, str] | None:
+    for message in reversed(messages or []):
+        if message.get("role") == "user":
+            try:
+                task = json.loads(message.get("content") or "")
+                return {s["id"]: s["text"].strip() for s in task["sources"]}
+            except (json.JSONDecodeError, KeyError, TypeError, AttributeError):
+                return None
+    return None
+
+
+def run_check(check: Check, output: str, latency_ms: float | None,
+              messages: list[dict] | None = None) -> CheckResult:
     label = check.label
     ic = check.ignore_case
     text = output.strip()
@@ -187,6 +266,16 @@ def run_check(check: Check, output: str, latency_ms: float | None) -> CheckResul
     if check.kind == "max_length":
         ok = len(text) <= check.arg
         return CheckResult(label, ok, "" if ok else f"length {len(text)}")
+    if check.kind == "ear_design":
+        sources = _task_sources(messages)
+        if sources is None:
+            return CheckResult(label, False, "the last user message is not a modeling task JSON with sources")
+        try:
+            data = extract_json(output, check.strict)
+        except (json.JSONDecodeError, ValueError) as exc:
+            return CheckResult(label, False, f"not valid JSON: {exc}")
+        problem = ear_design_problem(data, sources)
+        return CheckResult(label, problem is None, problem or "")
     if check.kind == "max_latency_ms":
         if latency_ms is None:
             return CheckResult(label, False, "no latency recorded")

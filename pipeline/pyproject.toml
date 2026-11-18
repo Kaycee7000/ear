@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ear-pipeline"
+version = "0.1.0"
+description = "Agent tools for the EAR pipeline: r2-ghidra-ci evidence extraction -> modeling design, on GitHub Actions"
+requires-python = ">=3.10"
+# Also needs the model-review package from this repository (shared GitHub client):
+#   pip install "./model-review[mcp]" "./pipeline"
+dependencies = []
+
+[project.optional-dependencies]
+mcp = ["mcp>=1.2"]
+test = ["pytest>=8"]
+
+[project.scripts]
+ear-pipeline-mcp = "ear_pipeline.mcp_server:main"
+
+[tool.setuptools]
+packages = ["ear_pipeline"]
