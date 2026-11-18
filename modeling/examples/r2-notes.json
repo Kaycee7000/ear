@@ -2,19 +2,23 @@
  "sources": [
   {
    "id": "binary",
-   "text": "file notes (16904 bytes); elf x86 64-bit for linux; language c; built with GCC: (Debian 14.2.0-19) 14.2.0; symbols not stripped; dynamically linked; main sections: .text, .rodata, .init_array, .data, .bss"
+   "text": "file notes (16904 bytes); elf x86 64-bit for linux; language c"
+  },
+  {
+   "id": "build",
+   "text": "built with GCC: (Debian 14.2.0-19) 14.2.0; symbols not stripped; dynamically linked"
   },
   {
    "id": "imports",
-   "text": "Imported functions: fclose, fgets, fopen, fprintf, fputs, fwrite, getenv, perror, printf, snprintf, strcmp, strcspn, strncmp, strstr, time"
+   "text": "fclose, fgets, fopen, fprintf, fputs, fwrite, getenv, perror, printf, snprintf, strcmp, strcspn, strncmp, strstr, time"
   },
   {
    "id": "exports",
-   "text": "Exported symbols: main, stderr, stderr@GLIBC_2.2.5, stdout, stdout@GLIBC_2.2.5"
+   "text": "main, stderr, stderr@GLIBC_2.2.5, stdout, stdout@GLIBC_2.2.5"
   },
   {
    "id": "strings",
-   "text": "Strings in the binary: %d note(s)\\n | notes: unknown command %s\\n | %s/notes.txt | %s/audit.log | notes: no notes yet\\n | notes: cannot open store | %ld\\t%s\\n | usage: notes add <text> | list | search <word>\\n | /var/lib/notes | /etc/notes.conf | dir= | NOTES_DIR | search | list"
+   "text": "%d note(s)\\n | notes: unknown command %s\\n | %s/notes.txt | %s/audit.log | notes: no notes yet\\n | notes: cannot open store | %ld\\t%s\\n | usage: notes add <text> | list | search <word>\\n | /var/lib/notes | /etc/notes.conf | dir= | NOTES_DIR | search | list"
   },
   {
    "id": "fn-main",

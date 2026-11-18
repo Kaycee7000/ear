@@ -37,12 +37,12 @@ SOURCE_LIMIT = 6000        # modeling/design.py: max characters per source text
 MAX_SOURCES = 20           # modeling/design.py: 1-20 sources
 MIN_FUNCTION_CHARS = 300   # don't add a decompiled function shorter than this after trimming
 FUNCTION_CAP = 2000        # evidence characters per decompiled function, so several functions fit
+QUOTE_LIMIT = 160          # modeling/design.py: citation quotes are 1-160 characters
+FACT_LINE = 150            # one-line fact sources stay under QUOTE_LIMIT, so a model can quote one whole
 DEFAULT_GOAL = ("Explain how this program is built: its main components, the data it handles, "
                 "and how control and data flow between them, using only the extracted evidence.")
 ID_RE = re.compile(r"[^A-Za-z0-9_-]+")
 # Evidence keeps what says something about the program; extraction.json keeps everything.
-MAIN_SECTIONS = {".text", ".rodata", ".data", ".bss", ".init_array", ".tls", "__text", "__cstring", "__data",
-                 ".rdata", ".idata", ".edata", ".rsrc"}
 CRT_SYMBOL = re.compile(r"^(_ITM_\w+|__cxa_finalize|__cxa_atexit|__gmon_start__|__libc_start_main|"
                         r"__stack_chk_fail|_Jv_RegisterClasses|_IO_stdin_used|__TMC_END__|__dso_handle|"
                         r"__bss_start|__data_start|_edata|_end|_init|_fini|_start)$")
@@ -265,23 +265,25 @@ def source_id(prefix: str, name: str, used: set[str]) -> str:
     return sid
 
 
-def describe(info: dict) -> list[str]:
-    """File facts as short phrases; small models paraphrase `key: value` lists when quoting them."""
-    facts = []
+def describe(info: dict) -> tuple[str, str]:
+    """File facts as two short lines of phrases (what the file is; how it was built). Models paraphrase
+    `key: value` lists when quoting them, and try to quote a fact line whole, so each line stays under
+    the quote limit."""
+    what, build = [], []
     if info.get("file"):
-        facts.append(f"file {info['file']}" + (f" ({info['size_bytes']} bytes)" if info.get("size_bytes") else ""))
+        what.append(f"file {info['file']}" + (f" ({info['size_bytes']} bytes)" if info.get("size_bytes") else ""))
     kind = " ".join(str(x) for x in (info.get("format"), info.get("arch")) if x)
     if kind:
-        facts.append(kind + (f" {info['bits']}-bit" if info.get("bits") else "") + (f" for {info['os']}" if info.get("os") else ""))
+        what.append(kind + (f" {info['bits']}-bit" if info.get("bits") else "") + (f" for {info['os']}" if info.get("os") else ""))
     if info.get("language"):
-        facts.append(f"language {info['language']}")
+        what.append(f"language {info['language']}")
     if info.get("compiler"):
-        facts.append(f"built with {info['compiler']}")
+        build.append(f"built with {info['compiler']}")
     if info.get("stripped") is not None:
-        facts.append("stripped of symbols" if info["stripped"] else "symbols not stripped")
+        build.append("stripped of symbols" if info["stripped"] else "symbols not stripped")
     if info.get("static") is not None:
-        facts.append("statically linked" if info["static"] else "dynamically linked")
-    return facts
+        build.append("statically linked" if info["static"] else "dynamically linked")
+    return trim("; ".join(what), FACT_LINE), trim("; ".join(build), FACT_LINE)
 
 
 def task_bytes(goal: str, sources: list[dict]) -> int:
@@ -309,20 +311,20 @@ def build_sources(extraction: dict, goal: str) -> list[dict]:
         sources.append(entry)
         return True
 
-    facts = describe(extraction.get("info", {}))
-    names = [s["name"] for s in extraction.get("sections") or [] if s.get("name") in MAIN_SECTIONS]
-    if names:
-        facts.append("main sections: " + ", ".join(names))
     # One line per source where possible: small models mangle quotes that span lines.
-    try_add("", "binary", "; ".join(facts), 400)
+    what, build = describe(extraction.get("info", {}))
+    try_add("", "binary", what, FACT_LINE, 1)
+    try_add("", "build", build, FACT_LINE, 1)
+    # Bare lists, no "Imported functions:" label (the source ID says it): models quote the label plus
+    # one item ("Imported functions: getenv"), which is not an exact excerpt unless it is the first item.
     imports = [n for n in extraction.get("imports") or [] if not CRT_SYMBOL.match(n)]
     if imports:
-        try_add("", "imports", "Imported functions: " + ", ".join(imports), 700)
+        try_add("", "imports", ", ".join(imports), 700, 1)
     exports = [n for n in extraction.get("exports") or [] if not n.startswith("_") and not CRT_SYMBOL.match(n)]
     if exports and len(exports) <= 400:
-        try_add("", "exports", "Exported symbols: " + ", ".join(exports), 500)
+        try_add("", "exports", ", ".join(exports), 500, 1)
     if extraction.get("strings"):
-        try_add("", "strings", "Strings in the binary: " + " | ".join(extraction["strings"]), 1200)
+        try_add("", "strings", " | ".join(extraction["strings"]), 1200, 1)
     for fn in extraction.get("decompiled") or []:
         header = f"Decompiled {fn['name']} at {fn['addr']} ({fn['method']}, local declarations omitted):\n"
         try_add("fn-", fn["name"], header + without_declarations(fn["code"]), FUNCTION_CAP, MIN_FUNCTION_CHARS)

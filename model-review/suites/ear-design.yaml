@@ -171,13 +171,12 @@ cases:
   - ear_design: true
 - id: r2-notes
   description: Evidence extracted by r2-ghidra-ci/extract from the sample notes program (decompiled C).
-  prompt: '{"sources":[{"id":"binary","text":"file notes (16904 bytes); elf x86 64-bit for linux; language c; built with GCC:
-    (Debian 14.2.0-19) 14.2.0; symbols not stripped; dynamically linked; main sections: .text, .rodata, .init_array, .data,
-    .bss"},{"id":"imports","text":"Imported functions: fclose, fgets, fopen, fprintf, fputs, fwrite, getenv, perror, printf,
-    snprintf, strcmp, strcspn, strncmp, strstr, time"},{"id":"exports","text":"Exported symbols: main, stderr, stderr@GLIBC_2.2.5,
-    stdout, stdout@GLIBC_2.2.5"},{"id":"strings","text":"Strings in the binary: %d note(s)\\n | notes: unknown command %s\\n
-    | %s/notes.txt | %s/audit.log | notes: no notes yet\\n | notes: cannot open store | %ld\\t%s\\n | usage: notes add <text>
-    | list | search <word>\\n | /var/lib/notes | /etc/notes.conf | dir= | NOTES_DIR | search | list"},{"id":"fn-main","text":"Decompiled
+  prompt: '{"sources":[{"id":"binary","text":"file notes (16904 bytes); elf x86 64-bit for linux; language c"},{"id":"build","text":"built
+    with GCC: (Debian 14.2.0-19) 14.2.0; symbols not stripped; dynamically linked"},{"id":"imports","text":"fclose, fgets,
+    fopen, fprintf, fputs, fwrite, getenv, perror, printf, snprintf, strcmp, strcspn, strncmp, strstr, time"},{"id":"exports","text":"main,
+    stderr, stderr@GLIBC_2.2.5, stdout, stdout@GLIBC_2.2.5"},{"id":"strings","text":"%d note(s)\\n | notes: unknown command
+    %s\\n | %s/notes.txt | %s/audit.log | notes: no notes yet\\n | notes: cannot open store | %ld\\t%s\\n | usage: notes add
+    <text> | list | search <word>\\n | /var/lib/notes | /etc/notes.conf | dir= | NOTES_DIR | search | list"},{"id":"fn-main","text":"Decompiled
     main at 0x1452 (pdg, local declarations omitted):\nulong main(int argc,char **argv,char **envp)\n\n{\n    if (argc < 2)
     {\n        sym.imp.fwrite(\"usage: notes add <text> | list | search <word>\\n\",1,0x2f,_reloc.stderr);\n        uVar3
     = 2;\n    }\n    else {\n        sym.load_config();\n        pcVar1 = argv[1];\n        iVar2 = sym.imp.strcmp(pcVar1,0x208a);\n        if
@@ -237,6 +236,7 @@ cases:
                           type: string
                           enum:
                           - binary
+                          - build
                           - imports
                           - exports
                           - strings
@@ -295,6 +295,7 @@ cases:
                           type: string
                           enum:
                           - binary
+                          - build
                           - imports
                           - exports
                           - strings

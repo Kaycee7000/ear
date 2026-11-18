@@ -39,7 +39,7 @@ def test_sources_fit_the_modeling_limits():
     for goal in ("short goal", "g" * 1000):
         sources = ex.build_sources(fake_extraction(), goal)
         check_task(goal, sources)
-        assert [s["id"] for s in sources][:3] == ["binary", "imports", "strings"]
+        assert [s["id"] for s in sources][:4] == ["binary", "build", "imports", "strings"]
         assert any(s["id"].startswith("fn-") for s in sources)
 
 
@@ -50,11 +50,25 @@ def test_startup_symbols_and_noise_are_left_out_of_evidence():
     extraction["imports"] = ["__libc_start_main", "_ITM_registerTMCloneTable", "fopen", "__gmon_start__"]
     extraction["exports"] = ["_IO_stdin_used", "__TMC_END__", "_end"]
     sources = {s["id"]: s["text"] for s in ex.build_sources(extraction, "goal")}
-    assert sources["binary"].startswith("file demo; elf64 x86 64-bit; symbols not stripped")
-    assert "sha256" not in sources["binary"] and "main sections: .text" in sources["binary"]
-    assert ".note" not in sources["binary"] and "\n" not in sources["binary"] and "\n" not in sources["strings"]
-    assert sources["imports"] == "Imported functions: fopen"
+    assert sources["binary"] == "file demo; elf64 x86 64-bit" and sources["build"] == "symbols not stripped"
+    facts = sources["binary"] + sources["build"]
+    assert "sha256" not in facts and ".note" not in facts and ".text" not in facts
+    assert "\n" not in facts and "\n" not in sources["strings"]
+    assert sources["imports"] == "fopen"
     assert "exports" not in sources
+
+
+def test_fact_lines_can_be_quoted_whole():
+    info = {"file": "a-rather-long-program-name-" * 3, "size_bytes": 123456789, "format": "pe", "arch": "x86",
+            "bits": 64, "os": "windows", "language": "c++",
+            "compiler": "GCC: (GNU) 13.2.1 20231205 (Red Hat 13.2.1-6) with a long vendor suffix " * 2,
+            "stripped": True, "static": True}
+    extraction = fake_extraction(functions=1)
+    extraction["info"] = info
+    sources = {s["id"]: s["text"] for s in ex.build_sources(extraction, "goal")}
+    for sid in ("binary", "build"):
+        assert 1 <= len(sources[sid]) <= ex.FACT_LINE < ex.QUOTE_LIMIT and "\n" not in sources[sid]
+    assert sources["binary"].startswith("file a-rather-long") and sources["build"].startswith("built with GCC")
 
 
 def test_unicode_and_escapes_are_counted_in_bytes():
