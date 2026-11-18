@@ -53,14 +53,22 @@ jobs:
           echo "BOOTSTRAP_SECONDS=$(($(date +%s) - start))" >> "$GITHUB_ENV"
       - name: Generate and publish to B2
         env:
-          EAR_IMAGE_B2_REGION: ${{ vars.EAR_IMAGE_B2_REGION }}
-          EAR_IMAGE_B2_BUCKET: ${{ vars.EAR_IMAGE_B2_BUCKET }}
+          # Dedicated EAR_IMAGE_* settings win; otherwise the repository's shared EAR_B2_* secrets (the bucket
+          # and key the ear pipeline already uses) are used, so no second copy of the key is needed.
+          EAR_IMAGE_B2_REGION: ${{ vars.EAR_IMAGE_B2_REGION || secrets.EAR_B2_REGION }}
+          EAR_IMAGE_B2_BUCKET: ${{ vars.EAR_IMAGE_B2_BUCKET || secrets.EAR_B2_BUCKET }}
           EAR_IMAGE_PREFIX: ${{ vars.EAR_IMAGE_PREFIX || 'images' }}
-          EAR_IMAGE_B2_WRITE_KEY_ID: ${{ secrets.EAR_IMAGE_B2_WRITE_KEY_ID }}
-          EAR_IMAGE_B2_WRITE_KEY: ${{ secrets.EAR_IMAGE_B2_WRITE_KEY }}
+          EAR_IMAGE_B2_WRITE_KEY_ID: ${{ secrets.EAR_IMAGE_B2_WRITE_KEY_ID || secrets.EAR_B2_KEY_ID }}
+          EAR_IMAGE_B2_WRITE_KEY: ${{ secrets.EAR_IMAGE_B2_WRITE_KEY || secrets.EAR_B2_APPLICATION_KEY }}
           EAR_IMAGE_JOB_MINUTES: ${{ vars.EAR_IMAGE_JOB_MINUTES || '30' }}
           HF_TOKEN: ${{ secrets.EAR_IMAGE_HF_TOKEN }}
-        run: python worker/run.py
+        run: |
+          # Accept the region as us-east-005 or as its endpoint, s3.us-east-005.backblazeb2.com.
+          region=${EAR_IMAGE_B2_REGION#https://}
+          region=${region#s3.}
+          EAR_IMAGE_B2_REGION=${region%%.backblazeb2.com*}
+          export EAR_IMAGE_B2_REGION
+          python worker/run.py
       - name: Check optional cache size
         id: budget
         if: success() && vars.EAR_IMAGE_CACHE == 'true' && steps.weights.outputs.cache-hit != 'true'
