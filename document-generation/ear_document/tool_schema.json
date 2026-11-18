@@ -1,0 +1,172 @@
+[
+  {
+    "type": "function",
+    "function": {
+      "name": "generate_document",
+      "description": "Render an agent-written outline into a private document.",
+      "parameters": {
+        "$defs": {
+          "Outline": {
+            "additionalProperties": false,
+            "properties": {
+              "title": {
+                "maxLength": 96,
+                "minLength": 1,
+                "title": "Title",
+                "type": "string"
+              },
+              "subtitle": {
+                "anyOf": [
+                  {
+                    "maxLength": 180,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Subtitle"
+              },
+              "author": {
+                "anyOf": [
+                  {
+                    "maxLength": 96,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Author"
+              },
+              "sections": {
+                "items": {
+                  "$ref": "#/$defs/Section"
+                },
+                "maxItems": 40,
+                "minItems": 1,
+                "title": "Sections",
+                "type": "array"
+              }
+            },
+            "required": [
+              "title",
+              "sections"
+            ],
+            "title": "Outline",
+            "type": "object"
+          },
+          "Section": {
+            "additionalProperties": false,
+            "properties": {
+              "heading": {
+                "maxLength": 96,
+                "minLength": 1,
+                "title": "Heading",
+                "type": "string"
+              },
+              "paragraphs": {
+                "items": {
+                  "maxLength": 1200,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "maxItems": 24,
+                "title": "Paragraphs",
+                "type": "array"
+              },
+              "bullets": {
+                "items": {
+                  "maxLength": 1200,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "maxItems": 24,
+                "title": "Bullets",
+                "type": "array"
+              }
+            },
+            "required": [
+              "heading"
+            ],
+            "title": "Section",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "properties": {
+          "outline": {
+            "$ref": "#/$defs/Outline"
+          },
+          "format": {
+            "enum": [
+              "pdf",
+              "docx",
+              "pptx"
+            ],
+            "title": "Format",
+            "type": "string"
+          },
+          "wait_seconds": {
+            "default": 0,
+            "maximum": 86400,
+            "minimum": 0,
+            "title": "Wait Seconds",
+            "type": "integer"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "pattern": "^[a-zA-Z0-9_.:-]{1,128}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Request Id"
+          }
+        },
+        "required": [
+          "outline",
+          "format"
+        ],
+        "title": "Submit",
+        "type": "object"
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "get_document_result",
+      "description": "Resume a saved job and get a fresh B2 download URL.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          },
+          "wait_seconds": {
+            "default": 0,
+            "maximum": 86400,
+            "minimum": 0,
+            "title": "Wait Seconds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "job_id"
+        ],
+        "title": "Lookup",
+        "type": "object"
+      }
+    }
+  }
+]
