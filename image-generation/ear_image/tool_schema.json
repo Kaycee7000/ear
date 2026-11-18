@@ -1,0 +1,88 @@
+[
+  {
+    "type": "function",
+    "function": {
+      "name": "generate_image",
+      "description": "Submit one remote CPU image generation.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "prompt": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Prompt",
+            "type": "string"
+          },
+          "seed": {
+            "anyOf": [
+              {
+                "maximum": 4294967295,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Seed"
+          },
+          "wait_seconds": {
+            "default": 0,
+            "maximum": 86400,
+            "minimum": 0,
+            "title": "Wait Seconds",
+            "type": "integer"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "pattern": "^[a-zA-Z0-9_.:-]{1,128}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Request Id"
+          }
+        },
+        "required": [
+          "prompt"
+        ],
+        "title": "Submit",
+        "type": "object"
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "get_image_result",
+      "description": "Check a persisted job and get a fresh B2 URL.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "job_id": {
+            "title": "Job Id",
+            "type": "string",
+            "format": "uuid"
+          },
+          "wait_seconds": {
+            "default": 0,
+            "maximum": 86400,
+            "minimum": 0,
+            "title": "Wait Seconds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "job_id"
+        ],
+        "title": "Lookup",
+        "type": "object"
+      }
+    }
+  }
+]
