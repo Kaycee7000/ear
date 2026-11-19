@@ -1,6 +1,15 @@
 name: Generate one CPU image
-run-name: ear-image-${{ inputs.job_id }}
+run-name: ${{ github.event_name == 'workflow_dispatch' && format('ear-image-{0}', inputs.job_id) || 'Build image worker' }}
 on:
+  push:
+    branches: [main]
+    paths:
+      - "image-generation/**"
+      - ".github/workflows/generate-image.yml"
+  pull_request:
+    paths:
+      - "image-generation/**"
+      - ".github/workflows/generate-image.yml"
   workflow_dispatch:
     inputs:
       job_id:
@@ -20,13 +29,41 @@ permissions:
   contents: read
 
 jobs:
-  generate:
-    if: github.ref == format('refs/heads/{0}', vars.EAR_IMAGE_TRUSTED_REF || github.event.repository.default_branch)
+  image:
+    # Prebuild the pinned worker environment (CPU PyTorch, diffusers) once per change; jobs pull it.
+    if: github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Build and test the worker image
+        run: |
+          image=$(sh image-generation/image-tag.sh)
+          start=$(date +%s)
+          docker build --label "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" --tag "$image" image-generation
+          echo "Built in $(($(date +%s) - start)) s: $(docker image inspect --format '{{.Size}}' "$image") bytes"
+          docker run --rm --network none "$image" python -m unittest discover -s tests -p 'test_storage_worker.py' -v
+          docker run --rm --network none "$image" python -c "import torch, diffusers, transformers; print(torch.__version__, diffusers.__version__)"
+      - name: Publish to GHCR
+        if: github.event_name == 'push'
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker push "$(sh image-generation/image-tag.sh)"
+
+  generate:
+    if: github.event_name == 'workflow_dispatch' && github.ref == format('refs/heads/{0}', vars.EAR_IMAGE_TRUSTED_REF || github.event.repository.default_branch)
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: read
     timeout-minutes: ${{ vars.EAR_IMAGE_JOB_MINUTES && fromJSON(vars.EAR_IMAGE_JOB_MINUTES) >= 1 && fromJSON(vars.EAR_IMAGE_JOB_MINUTES) <= 30 && fromJSON(vars.EAR_IMAGE_JOB_MINUTES) || 30 }}
-    container:
-      # Docker Official Image library/python, linux/amd64 manifest for 3.12-slim-bookworm
-      image: python:3.12-slim-bookworm@sha256:0f086103b026048cc50cb5da25ec435c023c5241a83fc44daea593377abc61c4
     defaults:
       run:
         shell: sh
@@ -46,10 +83,19 @@ jobs:
         with:
           path: image-generation/.model-cache
           key: ear-image-v1-${{ runner.arch }}-${{ env.EAR_IMAGE_MODEL_ID }}-${{ env.EAR_IMAGE_MODEL_REVISION }}
-      - name: Install lightweight worker bootstrap
+      - name: Load the prebuilt worker
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          image=$(sh image-tag.sh)
           start=$(date +%s)
-          python -m pip install --no-cache-dir --disable-pip-version-check .
+          # Falls back to building the same Dockerfile when the image for this checkout is not published yet.
+          if ! (echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin && docker pull -q "$image"); then
+            docker build -q --tag "$image" .
+          fi
+          docker logout ghcr.io
+          mkdir -p .model-cache
+          echo "$image" > "$RUNNER_TEMP/ear-image-worker"
           echo "BOOTSTRAP_SECONDS=$(($(date +%s) - start))" >> "$GITHUB_ENV"
       - name: Generate and publish to B2
         env:
@@ -68,7 +114,14 @@ jobs:
           region=${region#s3.}
           EAR_IMAGE_B2_REGION=${region%%.backblazeb2.com*}
           export EAR_IMAGE_B2_REGION
-          python worker/run.py
+          # Values are passed by name, so they never appear on the docker command line.
+          docker run --rm --cap-drop=ALL --security-opt=no-new-privileges \
+            --mount "type=bind,source=$PWD/.model-cache,target=/app/image-generation/.model-cache" \
+            --mount "type=bind,source=$GITHUB_EVENT_PATH,target=/run/event.json,readonly" \
+            -e GITHUB_EVENT_PATH=/run/event.json -e GITHUB_RUN_ID -e GITHUB_RUN_ATTEMPT -e BOOTSTRAP_SECONDS \
+            -e EAR_IMAGE_MODEL_ID -e EAR_IMAGE_MODEL_REVISION -e EAR_IMAGE_B2_REGION -e EAR_IMAGE_B2_BUCKET \
+            -e EAR_IMAGE_PREFIX -e EAR_IMAGE_B2_WRITE_KEY_ID -e EAR_IMAGE_B2_WRITE_KEY -e EAR_IMAGE_JOB_MINUTES -e HF_TOKEN \
+            "$(cat "$RUNNER_TEMP/ear-image-worker")" python worker/run.py
       - name: Check optional cache size
         id: budget
         if: success() && vars.EAR_IMAGE_CACHE == 'true' && steps.weights.outputs.cache-hit != 'true'

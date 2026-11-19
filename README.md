@@ -16,6 +16,10 @@ binary ──► r2-ghidra-ci/extract ──► evidence ──► modeling ─�
 | `modeling/` | Turns evidence into a design whose every component and relationship quotes the evidence exactly | `ear-model-design.yml` |
 | `model-review/` | Tests a model with a suite and returns PASS/FAIL; the `ear-design` suite tests the modeling step | `model-review.yml` |
 | `pipeline/` | Agent tools that chain extraction and modeling: `analyze_binary`, `get_analysis`, `get_function_code` | uses the two above |
+| `image-generation/` | One SD-Turbo picture on a CPU runner, stored in B2 | `generate-image.yml` (prebuilt worker image + jobs) |
+| `document-generation/` | An agent-written outline rendered as PDF, Word or PowerPoint, stored in B2 | `generate-document.yml` (prebuilt renderer image + jobs) |
+| `data-tools/` | DuckDB analysis of private datasets: a result table and an optional chart, stored in B2 | `data-tools.yml` |
+| `code-check/` | Reviews a project's diff with a coding model, or builds and tests it in a no-credentials container and explains failures; built files and reports stored in B2 | `code-check.yml` |
 
 Everything private (binaries, evidence, designs) goes through the private Backblaze B2 bucket; workflows
 receive only request IDs, so nothing private appears in this public repository's logs or artifacts.

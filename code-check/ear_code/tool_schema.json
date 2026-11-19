@@ -1,0 +1,226 @@
+[
+  {
+    "type": "function",
+    "function": {
+      "name": "prepare_source_upload",
+      "description": "Prepare a ten-minute direct B2 PUT for a project archive (.tar.gz) with a known checksum and size.",
+      "parameters": {
+        "properties": {
+          "sha256": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Sha256",
+            "type": "string"
+          },
+          "byte_size": {
+            "exclusiveMinimum": 0,
+            "maximum": 67108864,
+            "title": "Byte Size",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "sha256",
+          "byte_size"
+        ],
+        "title": "prepare_source_uploadArguments",
+        "type": "object"
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "run_code_check",
+      "description": "Review a project's diff with the coding model, or build and test it in a disposable container and explain a failure.",
+      "parameters": {
+        "$defs": {
+          "Plan": {
+            "additionalProperties": false,
+            "properties": {
+              "mode": {
+                "enum": [
+                  "review",
+                  "test"
+                ],
+                "title": "Mode",
+                "type": "string"
+              },
+              "steps": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Steps"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "focus": {
+                "anyOf": [
+                  {
+                    "maxLength": 800,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Focus"
+              },
+              "analyze": {
+                "default": true,
+                "title": "Analyze",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "mode"
+            ],
+            "title": "Plan",
+            "type": "object"
+          },
+          "Steps": {
+            "additionalProperties": false,
+            "description": "Shell commands run in order inside the toolbox container, from the project folder.",
+            "properties": {
+              "setup": {
+                "anyOf": [
+                  {
+                    "maxLength": 2000,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Setup"
+              },
+              "build": {
+                "anyOf": [
+                  {
+                    "maxLength": 2000,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Build"
+              },
+              "test": {
+                "anyOf": [
+                  {
+                    "maxLength": 2000,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Test"
+              },
+              "network": {
+                "default": "setup",
+                "enum": [
+                  "setup",
+                  "all"
+                ],
+                "title": "Network",
+                "type": "string"
+              },
+              "artifacts": {
+                "items": {
+                  "pattern": "^[A-Za-z0-9_.*?\\[\\]/@+-]{1,200}$",
+                  "type": "string"
+                },
+                "maxItems": 8,
+                "title": "Artifacts",
+                "type": "array"
+              }
+            },
+            "title": "Steps",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "source": {
+            "pattern": "^[a-f0-9]{64}\\.tar\\.gz$",
+            "title": "Source",
+            "type": "string"
+          },
+          "project": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9 _.-]{0,79}$",
+            "title": "Project",
+            "type": "string"
+          },
+          "plan": {
+            "$ref": "#/$defs/Plan"
+          },
+          "wait_seconds": {
+            "default": 0,
+            "maximum": 86400,
+            "minimum": 0,
+            "title": "Wait Seconds",
+            "type": "integer"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "pattern": "^[a-zA-Z0-9_.:-]{1,128}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Request Id"
+          }
+        },
+        "required": [
+          "source",
+          "project",
+          "plan"
+        ],
+        "title": "run_code_checkArguments",
+        "type": "object"
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "get_code_result",
+      "description": "Resume a code check: steps, review or failure analysis, and fresh B2 links to the report, logs and artifacts.",
+      "parameters": {
+        "properties": {
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          },
+          "wait_seconds": {
+            "default": 0,
+            "maximum": 86400,
+            "minimum": 0,
+            "title": "Wait Seconds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "job_id"
+        ],
+        "title": "get_code_resultArguments",
+        "type": "object"
+      }
+    }
+  }
+]
