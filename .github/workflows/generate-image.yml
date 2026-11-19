@@ -49,6 +49,13 @@ jobs:
           echo "Built in $(($(date +%s) - start)) s: $(docker image inspect --format '{{.Size}}' "$image") bytes"
           docker run --rm --network none "$image" python -m unittest discover -s tests -p 'test_storage_worker.py' -v
           docker run --rm --network none "$image" python -c "import torch, diffusers, transformers; print(torch.__version__, diffusers.__version__)"
+          # Run as a job does (runner's user, no capabilities, here no network): the worker must be able to write
+          # the model cache, skip its per-run install, and import the whole lock.
+          mkdir -p "$RUNNER_TEMP/cache-check"
+          docker run --rm --network none --cap-drop=ALL --security-opt=no-new-privileges --user "$(id -u):$(id -g)" \
+            --mount "type=bind,source=$RUNNER_TEMP/cache-check,target=/app/image-generation/.model-cache" "$image" \
+            sh -c 'touch .model-cache/write-check && test "$EAR_IMAGE_PREBUILT" = 1 && python -m pip check \
+              && python -c "import torch, diffusers, transformers, accelerate, safetensors, PIL" && echo "worker environment ok"'
       - name: Publish to GHCR
         if: github.event_name == 'push'
         env:
@@ -115,7 +122,8 @@ jobs:
           EAR_IMAGE_B2_REGION=${region%%.backblazeb2.com*}
           export EAR_IMAGE_B2_REGION
           # Values are passed by name, so they never appear on the docker command line.
-          docker run --rm --cap-drop=ALL --security-opt=no-new-privileges \
+          # As the runner's user: with all capabilities dropped, root could not write the runner-owned model cache.
+          docker run --rm --cap-drop=ALL --security-opt=no-new-privileges --user "$(id -u):$(id -g)" \
             --mount "type=bind,source=$PWD/.model-cache,target=/app/image-generation/.model-cache" \
             --mount "type=bind,source=$GITHUB_EVENT_PATH,target=/run/event.json,readonly" \
             -e GITHUB_EVENT_PATH=/run/event.json -e GITHUB_RUN_ID -e GITHUB_RUN_ATTEMPT -e BOOTSTRAP_SECONDS \

@@ -124,14 +124,17 @@ def execute(folder, raw, b2, prefix, identity, started):
         )
         code = "dependencies_failed"
         start = time.monotonic()
-        proc = subprocess.run(
-            [sys.executable, "-m", "pip", "install", "-r", str(HERE / "requirements.txt")],
-            env=env,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        if proc.returncode:
-            raise Issue("insufficient_resources" if proc.returncode in (-9, 137) else code)
+        # The prebuilt worker image (Dockerfile) already holds this lock; pip would still fetch the URL-pinned
+        # torch wheel again, so it is only run outside that image.
+        if os.environ.get("EAR_IMAGE_PREBUILT") != "1":
+            proc = subprocess.run(
+                [sys.executable, "-m", "pip", "install", "-r", str(HERE / "requirements.txt")],
+                env=env,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            if proc.returncode:
+                raise Issue("insufficient_resources" if proc.returncode in (-9, 137) else code)
         timings["dependencies"] = time.monotonic() - start + float(os.environ["BOOTSTRAP_SECONDS"])
         code = "model_failed"
         (folder / "stage").write_text(code)
