@@ -88,7 +88,8 @@ def main():
             check(reviewed["review"] is not None, "no review: " + json.dumps(reviewed["model"]))
             m = reviewed["model"]
             lines += [f"- Review: **{reviewed['outcome']}** in {m['seconds']} s ({m['prompt_tokens']} prompt tokens, "
-                      f"{m['output_tokens']} written)", "", "```json", json.dumps(reviewed["review"], indent=1), "```"]
+                      f"{m['output_tokens']} written)", "", "```json",
+                      json.dumps({**reviewed["review"], "walkthrough": reviewed.get("walkthrough")}, indent=1), "```"]
         else:
             check(reviewed["outcome"] == "not_reviewed", "review without a model")
             diff = (tmp / "out3" / "report.md").read_text()
