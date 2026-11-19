@@ -10,3 +10,5 @@ COPY ear_image ./ear_image
 COPY worker ./worker
 COPY tests ./tests
 RUN python -m pip install --no-cache-dir . && python -m pip check
+# Tells worker/run.py the lock is installed, so it skips its per-run pip install.
+ENV EAR_IMAGE_PREBUILT=1

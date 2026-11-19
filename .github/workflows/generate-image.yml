@@ -49,12 +49,13 @@ jobs:
           echo "Built in $(($(date +%s) - start)) s: $(docker image inspect --format '{{.Size}}' "$image") bytes"
           docker run --rm --network none "$image" python -m unittest discover -s tests -p 'test_storage_worker.py' -v
           docker run --rm --network none "$image" python -c "import torch, diffusers, transformers; print(torch.__version__, diffusers.__version__)"
-          # Run exactly as a job does (runner's user, no capabilities): the worker must be able to write the model
-          # cache and its startup dependency check must pass without installing anything.
+          # Run as a job does (runner's user, no capabilities, here no network): the worker must be able to write
+          # the model cache, skip its per-run install, and import the whole lock.
           mkdir -p "$RUNNER_TEMP/cache-check"
           docker run --rm --network none --cap-drop=ALL --security-opt=no-new-privileges --user "$(id -u):$(id -g)" \
             --mount "type=bind,source=$RUNNER_TEMP/cache-check,target=/app/image-generation/.model-cache" "$image" \
-            sh -c 'touch .model-cache/write-check && python -m pip install --no-index -q -r worker/requirements.txt && echo "worker environment ok"'
+            sh -c 'touch .model-cache/write-check && test "$EAR_IMAGE_PREBUILT" = 1 && python -m pip check \
+              && python -c "import torch, diffusers, transformers, accelerate, safetensors, PIL" && echo "worker environment ok"'
       - name: Publish to GHCR
         if: github.event_name == 'push'
         env:
