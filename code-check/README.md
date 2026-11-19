@@ -7,7 +7,7 @@ the review or failure analysis and B2 object keys, never the files themselves.
 
 | Mode | What runs | What comes back |
 | --- | --- | --- |
-| `review` | Qwen2.5-Coder-7B-Instruct (Q4_K_M, llama.cpp CPU server) reads the file list and the diff | `approved` or `changes_requested`, a summary and up to 12 findings (severity, file, line, problem, fix) |
+| `review` | Qwen2.5-Coder-14B-Instruct (Q4_K_M, checksum-pinned, llama.cpp CPU server) traces each changed function with typical and bad input, then lists findings | `approved` or `changes_requested`, a summary and up to 12 findings (severity, file, line, problem, fix); the trace is in `report.md` |
 | `test` | `setup`, `build`, `test` shell commands in the toolbox container, in that order, stopping at the first failure | `passed` or `failed`; each step's exit code, time and log; on failure, the model's analysis (what failed, why, fix steps, files to look at); on success, up to 8 built files (`artifacts` globs; a folder becomes a `.zip`) |
 
 The toolbox (`Dockerfile`) matches the agent's workstation: Python 3.12, Node 26.13.1, uv 0.13.9, git and a
@@ -15,6 +15,13 @@ C/C++ toolchain. Pushes to `main` that change this folder build it, test it offl
 and publish it to `ghcr.io/kaycee7000/ear/code-check:tree-<git tree>`; jobs pull that image and build the
 same Dockerfile if it is missing. Pull requests also run the coding model on the example project and print
 its analysis and review, with timings, in the job summary.
+
+Measured on the pull request's self-test (GitHub's 4-CPU runner, example cart project):
+
+| | 7B | 14B (default) |
+| --- | --- | --- |
+| Failure analysis of the quantity bug | correct, 87 s with download | correct, 182 s with the 9 GB download |
+| Review of a discount change that returns NaN for an unknown code | approved (first prompt); with the walkthrough, changes requested for the wrong reason | changes requested: NaN for an unknown code (major, right line and fix); missed that it subtracts the percentage as money; 133 s |
 
 ## Isolation
 
