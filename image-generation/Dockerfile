@@ -9,4 +9,4 @@ COPY pyproject.toml ./
 COPY ear_image ./ear_image
 COPY worker ./worker
 COPY tests ./tests
-RUN python -m pip install --no-cache-dir --no-deps . && python -m pip check
+RUN python -m pip install --no-cache-dir . && python -m pip check

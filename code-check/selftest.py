@@ -61,8 +61,9 @@ def main():
 
         failing = run(project, EXAMPLES / "test-plan.json", image, tmp / "out1", model)
         test = failing["steps"][-1]
+        steps = json.dumps([{k: s[k] for k in ("name", "exit_code", "tail")} for s in failing["steps"]], indent=1)
         check(failing["outcome"] == "failed" and test["name"] == "test" and test["exit_code"] not in (0, None),
-              "the failing test was not reported as failed")
+              "the failing test was not reported as failed:\n" + steps)
         check("31.5" in test["tail"], "the test log tail does not show the assertion")
         check(failing["artifacts"] == [], "a failed run must not collect artifacts")
         lines += [f"- Failing test reported: exit {test['exit_code']}, build {failing['steps'][0]['seconds']} s, "

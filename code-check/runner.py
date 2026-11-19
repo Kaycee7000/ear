@@ -104,7 +104,8 @@ def clip_tail(data, lines=40, chars=2000):
 def run_step(image, name, step, command, network, work, logs, timeout):
     """Run one shell step; keep the start and the end of its output (the end shows the failure)."""
     container_name = f"{name}-{step}"
-    args = container(image, container_name, ["bash", "-lc", command], network=network,
+    # Not a login shell: Debian's /etc/profile would reset PATH.
+    args = container(image, container_name, ["bash", "-c", command], network=network,
                      mounts=[(work, "/work", False)], workdir="/work/src", tmp_exec=True,
                      env={"HOME": "/work/home", "CI": "true", "NPM_CONFIG_UPDATE_NOTIFIER": "false",
                           "NPM_CONFIG_FUND": "false", "PIP_DISABLE_PIP_VERSION_CHECK": "1", "FORCE_COLOR": "0"})
