@@ -1,0 +1,97 @@
+name: EAR code check
+run-name: ${{ github.event_name == 'workflow_dispatch' && format('ear-code-{0}', inputs.job_id) || 'Build and test code toolbox' }}
+on:
+  push:
+    branches: [main]
+    paths:
+      - "code-check/**"
+      - ".github/workflows/code-check.yml"
+  pull_request:
+    paths:
+      - "code-check/**"
+      - ".github/workflows/code-check.yml"
+  workflow_dispatch:
+    inputs:
+      job_id:
+        description: Agent-created private job UUID
+        required: true
+        type: string
+      request_sha256:
+        description: SHA-256 of the private B2 request
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  image:
+    # Build the toolbox, test it offline and (on main) publish it. Pull requests also run the coding model on the
+    # example project so a change to prompts or the model shows its effect before it is merged.
+    if: github.event_name != 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - name: Offline unit tests
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --disable-pip-version-check -q ./document-generation './code-check[mcp]'
+          cd code-check && "$RUNNER_TEMP/venv/bin/python" -m unittest discover -s tests -v
+      - name: Build the toolbox image
+        run: |
+          image=$(sh code-check/image-tag.sh)
+          start=$(date +%s)
+          docker build --label "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" --tag "$image" code-check
+          echo "Toolbox built in $(($(date +%s) - start)) s: $(docker image inspect --format '{{.Size}}' "$image") bytes"
+      - name: Self-test in the real containers
+        run: python3 code-check/selftest.py "$(sh code-check/image-tag.sh)" ${{ github.event_name == 'pull_request' && '--model' || '' }}
+      - name: Publish the tested toolbox to GHCR
+        if: github.event_name == 'push'
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker push "$(sh code-check/image-tag.sh)"
+
+  check:
+    if: github.event_name == 'workflow_dispatch' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - name: Load the toolbox for this checkout
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          image=$(sh code-check/image-tag.sh)
+          start=$(date +%s)
+          if ! (echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin && docker pull -q "$image"); then
+            docker build -q --tag "$image" code-check
+          fi
+          echo "Toolbox ready in $(($(date +%s) - start)) s"
+          docker logout ghcr.io
+          echo "$image" > "$RUNNER_TEMP/ear-code-image"
+      - name: Fetch the private project, build, test, review and publish
+        env:
+          EAR_CODE_B2_REGION: ${{ vars.EAR_CODE_B2_REGION || secrets.EAR_B2_REGION }}
+          EAR_CODE_B2_BUCKET: ${{ vars.EAR_CODE_B2_BUCKET || secrets.EAR_B2_BUCKET }}
+          EAR_CODE_PREFIX: ${{ vars.EAR_CODE_PREFIX || 'code' }}
+          EAR_CODE_READ_KEY_ID: ${{ secrets.EAR_CODE_INPUT_READ_KEY_ID || secrets.EAR_B2_KEY_ID }}
+          EAR_CODE_READ_KEY: ${{ secrets.EAR_CODE_INPUT_READ_KEY || secrets.EAR_B2_APPLICATION_KEY }}
+          EAR_CODE_WRITE_KEY_ID: ${{ secrets.EAR_CODE_RESULT_WRITE_KEY_ID || secrets.EAR_B2_KEY_ID }}
+          EAR_CODE_WRITE_KEY: ${{ secrets.EAR_CODE_RESULT_WRITE_KEY || secrets.EAR_B2_APPLICATION_KEY }}
+          EAR_CODE_MODEL_URL: ${{ vars.EAR_CODE_MODEL_URL }}
+          EAR_CODE_MODEL_SHA256: ${{ vars.EAR_CODE_MODEL_SHA256 }}
+          EAR_CODE_MODEL_NAME: ${{ vars.EAR_CODE_MODEL_NAME }}
+        run: python3 code-check/runner.py "$(cat "$RUNNER_TEMP/ear-code-image")"

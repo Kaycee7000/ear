@@ -1,0 +1,7 @@
+**
+!Dockerfile
+!worker/
+!worker/*.py
+!worker/requirements.txt
+!ear_code/
+!ear_code/plan.py
