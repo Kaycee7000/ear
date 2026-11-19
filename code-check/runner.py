@@ -34,11 +34,13 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 LLAMA_IMAGE = "ghcr.io/ggml-org/llama.cpp@sha256:5b43086e3ba7ea5794d72904654f6cd41224a9b1c6ac0398f4940ee380d30f23"
 MODEL = {
-    "name": "Qwen2.5-Coder-7B-Instruct Q4_K_M",
-    "url": "https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct-GGUF/resolve/"
-    "13fb94bfda8c8cf22497dc57b78f391a9acb426a/qwen2.5-coder-7b-instruct-q4_k_m.gguf",
-    "sha256": "509287f78cb4d4cf6b3843734733b914b2c158e43e22a7f4bf5e963800894d3c",
+    "name": "Qwen2.5-Coder-14B-Instruct Q4_K_M",
+    "url": "https://huggingface.co/Qwen/Qwen2.5-Coder-14B-Instruct-GGUF/resolve/"
+    "d0a692ef765eefbf2fabb130b3cb2e8917e3d225/qwen2.5-coder-14b-instruct-q4_k_m.gguf",
+    "sha256": "c1e659736d89ac1065fb495330fb824d94001974a4bfa78e7270e43476a8d940",
 }
+# The 7B (Qwen/Qwen2.5-Coder-7B-Instruct-GGUF @13fb94bf, q4_k_m, sha256 509287f7...) explained test failures well
+# but approved a change whose discount lookup returns NaN; set EAR_CODE_MODEL_* to use it for speed.
 STEP_SECONDS = {"setup": 900, "build": 900, "test": 900}
 MAX_LOG = 2 * 1024**2
 LOG_HEAD = 64 * 1024
@@ -186,7 +188,7 @@ class ModelServer:
         subprocess.run(["docker", "run", "-d", "--rm", "--name", self.name, "--log-driver", "none",
                         "-p", "127.0.0.1::8080", "-v", f"{path}:/models/coder.gguf:ro", LLAMA_IMAGE,
                         "-m", "/models/coder.gguf", "--alias", "coder", "--host", "0.0.0.0", "--port", "8080",
-                        "--ctx-size", "16384", "--parallel", "1", "--threads", threads],
+                        "--ctx-size", "12288", "--parallel", "1", "--threads", threads],
                        check=True, stdout=subprocess.DEVNULL, timeout=120)
         port = subprocess.run(["docker", "port", self.name, "8080/tcp"], capture_output=True, text=True,
                               check=True, timeout=30).stdout.split()[0]
