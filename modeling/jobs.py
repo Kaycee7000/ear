@@ -10,7 +10,7 @@ import httpx
 from botocore.config import Config
 from botocore.exceptions import ClientError
 
-from design import Design, Evidence, Task, synthesize
+from design import Design, Evidence, Task, public_reason, synthesize
 
 WORKFLOW = "ear-model-design.yml"
 PREFIX = "ear-modeling/"
@@ -141,7 +141,10 @@ if __name__ == "__main__":
     try:
         work(required("EAR_REQUEST_ID"), int(required("GITHUB_RUN_ID")), int(required("GITHUB_RUN_ATTEMPT")))
     except Exception as exc:
-        # A public workflow log must never include evidence, model output or credentials.
-        print(f"Modeling worker failed ({type(exc).__name__}). Check input, storage and model setup.",
+        # A public workflow log must never include evidence, model output or credentials: only the design
+        # checks' own fixed sentences are printed (public_reason), anything else by its type alone.
+        reason = public_reason(exc)
+        print(f"Modeling worker failed: {reason}" if reason else
+              f"Modeling worker failed ({type(exc).__name__}). Check input, storage and model setup.",
               file=sys.stderr)
         sys.exit(1)
