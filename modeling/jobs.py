@@ -10,7 +10,7 @@ import httpx
 from botocore.config import Config
 from botocore.exceptions import ClientError
 
-from design import Design, Evidence, Task, public_reason, synthesize
+from design import Design, DesignFailed, Evidence, Task, public_reason, synthesize
 
 WORKFLOW = "ear-model-design.yml"
 PREFIX = "ear-modeling/"
@@ -99,10 +99,15 @@ def submit(goal: str, evidence_key: str) -> dict:
                            "before submitting again.") from exc
 
 
-def result_key(run_id: int, attempt: int) -> str:
+def result_key(run_id: int, attempt: int, name: str = "design.json") -> str:
     if run_id < 1 or attempt < 1:
         raise ValueError("Expected a positive run ID and attempt.")
-    return f"{PREFIX}results/{run_id}/{attempt}/design.json"
+    return f"{PREFIX}results/{run_id}/{attempt}/{name}"
+
+
+def failure_key(run_id: int, attempt: int) -> str:
+    """Private record of a failed design: the raw model answers and the rule each broke (bucket only)."""
+    return result_key(run_id, attempt, "failure.json")
 
 
 def status(run_id: int) -> dict:
@@ -122,6 +127,14 @@ def status(run_id: int) -> dict:
             state["result_error"] = "Design is missing or expired. Check the workflow run and B2 retention."
         else:
             state["design"] = Design.model_validate_json(result).model_dump()
+    elif run["status"] == "completed":
+        try:
+            failure = json.loads(Store().read(failure_key(run_id, run["run_attempt"])))
+        except ClientError:
+            pass   # no record: the run failed before or outside validation
+        else:
+            state["result_error"] = failure.get("reason")
+            state["failure_key"] = failure_key(run_id, run["run_attempt"])
     return state
 
 
@@ -131,7 +144,13 @@ def work(request_id: str, run_id: int, attempt: int) -> None:
     key = result_key(run_id, attempt)
     store = Store()
     task = Task.model_validate_json(store.read(f"{PREFIX}requests/{request_id}.json"))
-    result = synthesize(task)
+    try:
+        result = synthesize(task)
+    except DesignFailed as exc:
+        # Kept private like the design itself, so a failure can be diagnosed without a public log.
+        store.write(failure_key(run_id, attempt), json.dumps(
+            {"request_id": request_id, "reason": str(exc), "attempts": exc.attempts}).encode())
+        raise
     store.write(key, result.model_dump_json().encode())
 
 
