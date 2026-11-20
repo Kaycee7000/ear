@@ -34,7 +34,7 @@ server = _Server("model-review", instructions=INSTRUCTIONS)
 @server.tool()
 async def review_model(model: str, suite: str = "smoke", backend: str = "ollama",
                        endpoint: str | None = None, runner: str | None = None,
-                       wait_seconds: int = tools.DEFAULT_WAIT_S) -> dict:
+                       wait_seconds: int = tools.DEFAULT_WAIT_S, suite_key: str | None = None) -> dict:
     """Review (test and validate) a model by running a test suite against it on GitHub Actions.
 
     model: Ollama tag (e.g. 'qwen2.5:0.5b'), 'hf.co/<user>/<repo>:<quant>', or the model name at `endpoint`.
@@ -43,8 +43,11 @@ async def review_model(model: str, suite: str = "smoke", backend: str = "ollama"
     endpoint: OpenAI-compatible base URL, only for backend='endpoint'.
     runner: runner label or JSON list of labels; default is GitHub's free 'ubuntu-latest' CPU runner.
     wait_seconds: wait this long for the verdict; if not finished you get a run_id to pass to get_review.
+    suite_key: a private suite in the EAR bucket (model-review/suites/...yaml), for example one made to test a
+        design; it replaces `suite`, and its prompts, replies and results stay private.
     """
-    return await asyncio.to_thread(tools.review_model, model, suite, backend, endpoint, runner, wait_seconds)
+    return await asyncio.to_thread(tools.review_model, model, suite, backend, endpoint, runner, wait_seconds,
+                                   suite_key)
 
 
 @server.tool()

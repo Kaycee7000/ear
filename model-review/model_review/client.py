@@ -25,6 +25,7 @@ import argparse
 import io
 import json
 import os
+import re
 import sys
 import time
 import urllib.error
@@ -38,6 +39,8 @@ DEFAULT_WORKFLOW = "model-review.yml"
 SUITES_PATH = "model-review/suites"
 ARTIFACT_PREFIX = "model-review-"
 MAX_OUTPUT_CHARS = 300
+PRIVATE_SUITE = "private"   # the suite name a run shows when its suite came from the bucket (suite_key)
+PRIVATE_TITLE = re.compile(r" / private \[([A-Za-z0-9][A-Za-z0-9_-]{0,63})\]$")
 
 PENDING_STATUSES = {"queued", "requested", "waiting", "pending"}
 
@@ -115,11 +118,23 @@ class ModelReviewClient:
     # ---------- API ----------
 
     def start_review(self, model: str, suite: str = "smoke", backend: str = "ollama",
-                     endpoint: str | None = None, runner: str | list | None = None) -> dict:
+                     endpoint: str | None = None, runner: str | list | None = None,
+                     suite_key: str | None = None) -> dict:
         if not model:
             raise ReviewError("model is required")
         request_id = uuid.uuid4().hex[:12]
+        if suite_key:
+            from .private import PrivateError, check_suite_key
+            try:
+                check_suite_key(suite_key)
+            except PrivateError as exc:
+                raise ReviewError(str(exc)) from None
+            suite = PRIVATE_SUITE
+        elif suite == PRIVATE_SUITE:
+            raise ReviewError("the suite name 'private' is reserved for suite_key reviews")
         inputs = {"model": model, "suite": suite, "backend": backend, "request_id": request_id}
+        if suite_key:
+            inputs["suite_key"] = suite_key
         if endpoint:
             inputs["endpoint"] = endpoint
         if runner:
@@ -183,7 +198,15 @@ class ModelReviewClient:
             return {**base, "state": "running",
                     "message": "The review is running. Call get_review again in a minute or two."}
 
-        results = self.fetch_results(run_id)
+        private = PRIVATE_TITLE.search(run.get("display_title") or "")
+        if private:  # a private suite's results are in the bucket, never in an artifact
+            from .private import PrivateError, read_results
+            try:
+                results = read_results(private.group(1))
+            except PrivateError as exc:
+                raise ReviewError(str(exc)) from None
+        else:
+            results = self.fetch_results(run_id)
         if results is None:
             steps = self._failed_steps(run_id)
             where = f" Failed at: {', '.join(steps)}." if steps else ""
@@ -203,8 +226,8 @@ class ModelReviewClient:
 
     def review_model(self, model: str, suite: str = "smoke", backend: str = "ollama",
                      endpoint: str | None = None, runner: str | list | None = None,
-                     wait_s: float = 1800, poll_s: float = 15) -> dict:
-        started = self.start_review(model, suite, backend, endpoint, runner)
+                     wait_s: float = 1800, poll_s: float = 15, suite_key: str | None = None) -> dict:
+        started = self.start_review(model, suite, backend, endpoint, runner, suite_key)
         if wait_s <= 0:
             return {**started, "message": "Review started. Call get_review with this run_id for the verdict."}
         review = self.wait_for_review(started["run_id"], wait_s, poll_s)
@@ -279,6 +302,7 @@ def main(argv: list[str] | None = None) -> int:
     rv = sub.add_parser("review", help="start a review and (by default) wait for the verdict")
     rv.add_argument("--model", required=True)
     rv.add_argument("--suite", default="smoke")
+    rv.add_argument("--suite-key", help="private suite in the EAR bucket (model-review/suites/...yaml)")
     rv.add_argument("--backend", default="ollama", choices=["ollama", "endpoint", "mock"])
     rv.add_argument("--endpoint")
     rv.add_argument("--runner", help='runner label or JSON list, e.g. \'["self-hosted","gpu"]\'')
@@ -296,7 +320,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.cmd == "review":
             out = client.review_model(args.model, args.suite, args.backend, args.endpoint,
-                                      args.runner, wait_s=0 if args.no_wait else args.wait)
+                                      args.runner, wait_s=0 if args.no_wait else args.wait,
+                                      suite_key=args.suite_key)
         elif args.cmd == "status":
             out = (client.wait_for_review(args.run_id, args.wait) if args.wait > 0
                    else client.get_review(args.run_id))

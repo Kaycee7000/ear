@@ -184,6 +184,23 @@ python -m model_review.runner --suite-file suites/my-model.yaml \
   --model qwen2.5:0.5b --base-url http://127.0.0.1:11434/v1 --out /tmp/review
 ```
 
+### Private suites
+
+A suite can carry data that should stay private, for example a design the pipeline built from a binary, with
+questions whose right answers come from running the real program. Keep that suite in the EAR bucket instead of
+this repo and pass its key:
+
+```bash
+model-review review --model qwen2.5:7b --suite-key model-review/suites/design-review-42.yaml
+```
+
+- The workflow reads the suite from the bucket (`suite_key`, under `model-review/suites/`) with the repo's
+  `EAR_B2_*` secrets. The run shows the suite as `private`.
+- The job summary gets only the verdict and counts. results.json and report.md go to
+  `model-review/results/<request_id>/` in the bucket, not to an artifact. `get_review` reads them from there, so
+  the agent side needs the same four `EAR_B2_*` settings.
+- `model_review/private.py` holds this, with boto3 imported only for private suites.
+
 ## Development
 
 ```bash

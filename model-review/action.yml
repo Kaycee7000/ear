@@ -25,6 +25,28 @@ inputs:
     description: Opaque id from the agent client, used to name the results artifact
     required: false
     default: ""
+  suite-key:
+    description: >-
+      Private suite: an object under model-review/suites/ in the EAR bucket. It replaces `suite`; prompts and
+      replies stay out of the job summary and the results go back to the bucket instead of an artifact.
+    required: false
+    default: ""
+  b2-region:
+    description: EAR bucket region or endpoint (private suites only)
+    required: false
+    default: ""
+  b2-bucket:
+    description: EAR bucket name (private suites only)
+    required: false
+    default: ""
+  b2-key-id:
+    description: EAR bucket key id (private suites only)
+    required: false
+    default: ""
+  b2-key:
+    description: EAR bucket application key (private suites only)
+    required: false
+    default: ""
   python-version:
     description: Python used to run the harness
     required: false
@@ -51,6 +73,19 @@ runs:
         ACTION_PATH: ${{ github.action_path }}
       run: python -m pip install --quiet --disable-pip-version-check "$ACTION_PATH"
 
+    - name: Fetch private suite
+      if: inputs.suite-key != ''
+      shell: bash
+      env:
+        SUITE_KEY: ${{ inputs.suite-key }}
+        EAR_B2_REGION: ${{ inputs.b2-region }}
+        EAR_B2_BUCKET: ${{ inputs.b2-bucket }}
+        EAR_B2_KEY_ID: ${{ inputs.b2-key-id }}
+        EAR_B2_APPLICATION_KEY: ${{ inputs.b2-key }}
+      run: |
+        python -m pip install --quiet --disable-pip-version-check "boto3==1.44.5"
+        python -m model_review.private fetch "$SUITE_KEY" "$RUNNER_TEMP/private-suite.yaml"
+
     - name: Start model backend
       shell: bash
       env:
@@ -69,20 +104,42 @@ runs:
         BACKEND: ${{ inputs.backend }}
         MODEL: ${{ inputs.model }}
         SUITE: ${{ inputs.suite }}
+        SUITE_KEY: ${{ inputs.suite-key }}
         REQUEST_ID: ${{ inputs.request-id }}
         MODEL_REVIEW_API_KEY: ${{ inputs.api-key }}
       run: |
+        if [[ -n "$SUITE_KEY" ]]; then
+          which=(--suite-file "$RUNNER_TEMP/private-suite.yaml" --private)
+        else
+          which=(--suite "$SUITE" --suites-dir "$ACTION_PATH/suites")
+        fi
         python -m model_review.runner \
-          --suite "$SUITE" \
-          --suites-dir "$ACTION_PATH/suites" \
+          "${which[@]}" \
           --model "$MODEL" \
           --base-url "$MODEL_REVIEW_BASE_URL" \
           --backend "$BACKEND" \
           --request-id "$REQUEST_ID" \
           --out "$RUNNER_TEMP/model-review"
 
+    - name: Publish private results
+      if: always() && inputs.suite-key != ''
+      shell: bash
+      env:
+        REQUEST_ID: ${{ inputs.request-id }}
+        EAR_B2_REGION: ${{ inputs.b2-region }}
+        EAR_B2_BUCKET: ${{ inputs.b2-bucket }}
+        EAR_B2_KEY_ID: ${{ inputs.b2-key-id }}
+        EAR_B2_APPLICATION_KEY: ${{ inputs.b2-key }}
+      run: |
+        if [[ ! -f "$RUNNER_TEMP/model-review/results.json" ]]; then
+          mkdir -p "$RUNNER_TEMP/model-review"
+          printf '{"verdict":"ERROR","stage":"setup","error":"the private suite could not be fetched or run","summary":{}}' \
+            > "$RUNNER_TEMP/model-review/results.json"
+        fi
+        python -m model_review.private publish "${REQUEST_ID:-run-$GITHUB_RUN_ID}" "$RUNNER_TEMP/model-review"
+
     - name: Upload results
-      if: always()
+      if: always() && inputs.suite-key == ''
       uses: actions/upload-artifact@v7
       with:
         name: model-review-${{ inputs.request-id || github.run_id }}

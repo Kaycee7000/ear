@@ -307,6 +307,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--backend", default="")
     parser.add_argument("--request-id", default="")
     parser.add_argument("--out", default="model-review-out")
+    parser.add_argument("--private", action="store_true",
+                        help="private suite: keep prompts and replies out of the job summary (results stay in --out)")
     args = parser.parse_args(argv)
 
     out = Path(args.out)
@@ -331,11 +333,17 @@ def main(argv: list[str] | None = None) -> int:
     report = render_markdown(results)
     (out / "report.md").write_text(report, encoding="utf-8")
 
-    _append(os.environ.get("GITHUB_STEP_SUMMARY"), report)
+    s = results["summary"]
+    if args.private:
+        # A public repo's job summary is visible to everyone: only the outcome goes there.
+        _append(os.environ.get("GITHUB_STEP_SUMMARY"),
+                f"## model-review: private suite\n\n**{results['verdict']}**: {s['passed']}/{s['total']} cases passed "
+                f"({s['errors']} errors). Prompts, replies and the report stay in the private bucket.\n")
+    else:
+        _append(os.environ.get("GITHUB_STEP_SUMMARY"), report)
     _append(os.environ.get("GITHUB_OUTPUT"),
             f"verdict={results['verdict']}\npass_rate={results['summary']['pass_rate']}\n")
 
-    s = results["summary"]
     print(f"Verdict: {results['verdict']}  ({s['passed']}/{s['total']} passed, {s['errors']} errors)")
     print(f"Results written to {out / 'results.json'}")
     return 0
