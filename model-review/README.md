@@ -200,6 +200,8 @@ model-review review --model qwen2.5:7b --suite-key model-review/suites/design-re
   `model-review/results/<request_id>/` in the bucket, not to an artifact. `get_review` reads them from there, so
   the agent side needs the same four `EAR_B2_*` settings.
 - `model_review/private.py` holds this, with boto3 imported only for private suites.
+- Like `ear-extract` and `ear-model-design`, private suites run only from the default branch. A run from
+  another branch stops at its first step, because the bucket secrets are only used by merged code.
 
 ## Development
 
