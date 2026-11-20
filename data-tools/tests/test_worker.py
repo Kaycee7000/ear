@@ -2,6 +2,7 @@ import io
 import json
 import tempfile
 import unittest
+from datetime import date
 from hashlib import sha256
 from importlib.util import find_spec
 from pathlib import Path
@@ -140,6 +141,43 @@ class Pipeline(unittest.TestCase):
         self.assertEqual(
             analyze(tables, plan).to_pylist(),
             [{"name": "b", "total": 7, "pos": 1}, {"name": "a", "total": 5, "pos": 2}],
+        )
+
+    def test_text_dates_and_times(self):
+        # Exported meter data often has d/m/yy text dates and text readings with "?" for gaps.
+        table = pa.table(
+            {
+                "Date": ["16/12/06", "17/12/06", "1/1/07", "9/6/07"],
+                "Time": ["17:24:00", "0:00:00", "12:30:00", "23:59:00"],
+                "kw": ["4.216", "?", "1.5", "2.0"],
+            }
+        )
+        monthly = """WITH r AS (SELECT strptime(Date || ' ' || Time, '%d/%m/%y %H:%M:%S') AS at,
+                         TRY_CAST(kw AS DOUBLE) AS kw FROM sales)
+                  SELECT strftime(at, '%Y-%m') AS month, quarter(at) AS q, monthname(at) AS name,
+                         COUNT(kw) AS readings, SUM(kw) AS kw, MAX(hour(at)) AS last_hour
+                  FROM r GROUP BY 1, 2, 3 ORDER BY month"""
+        parts = """SELECT split_part(Date, '/', 2) AS m, try_strptime(Date, '%Y-%m-%d') AS wrong,
+                          dayofweek(strptime(Date, '%d/%m/%y')) AS dow, isodow(strptime(Date, '%d/%m/%y')) AS iso,
+                          week(strptime(Date, '%d/%m/%y')) AS wk, date_part('day', strptime(Date, '%d/%m/%y')) AS d,
+                          dayname(strptime(Date, '%d/%m/%y')) AS dn, minute(strptime(Time, '%H:%M:%S')) AS mi,
+                          make_date(2007, 1, 1) AS start
+                   FROM sales WHERE Date = '16/12/06'"""
+        plans = [Request(datasets={"sales": self.handle}, plan={"sql": q}).plan for q in (monthly, parts)]
+        self.assertEqual(
+            analyze({"sales": table}, plans[0]).to_pylist(),
+            [
+                {"month": "2006-12", "q": 4, "name": "December", "readings": 1, "kw": 4.216, "last_hour": 17},
+                {"month": "2007-01", "q": 1, "name": "January", "readings": 1, "kw": 1.5, "last_hour": 12},
+                {"month": "2007-06", "q": 2, "name": "June", "readings": 1, "kw": 2.0, "last_hour": 23},
+            ],
+        )
+        self.assertEqual(
+            analyze({"sales": table}, plans[1]).to_pylist(),
+            [
+                {"m": "12", "wrong": None, "dow": 6, "iso": 6, "wk": 50, "d": 16, "dn": "Saturday", "mi": 24,
+                 "start": date(2007, 1, 1)}
+            ],
         )
 
     def test_out_of_scope_queries_and_cardinality(self):
