@@ -16,6 +16,7 @@ import os
 import re
 import sys
 import threading
+import time
 import urllib.parse
 import uuid
 
@@ -87,8 +88,26 @@ def _prefix(run: dict) -> str:
     return f"ear-extract/results/{run['id']}/{run['run_attempt']}/"
 
 
+UNLISTED_GRACE_S = 300
+_unlisted: dict[int, float] = {}   # run ID -> when GitHub first answered 404 for it (this process)
+_now = time.monotonic              # the tests replace this clock
+
+
 def status(run_id: int) -> dict:
-    run = _extraction_run(run_id)
+    try:
+        run = _extraction_run(run_id)
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code != 404:
+            raise
+        # GitHub can answer 404 for a few seconds after it starts a run (seen 2026-11-20, about 1 s after the
+        # dispatch). Report the run as still starting, so a wait keeps polling; give up after a grace period.
+        first = _unlisted.setdefault(run_id, _now())
+        if _now() - first > UNLISTED_GRACE_S:
+            raise ValueError(f"GitHub has no run {run_id}; check the run ID.") from None
+        return {"run_id": run_id, "state": "extracting",
+                "message": "GitHub has not listed this run yet (it can take a few seconds after the start). "
+                           "Check again shortly."}
+    _unlisted.pop(run_id, None)
     base = {"run_id": run_id, "run_url": run["html_url"]}
     if run["status"] != "completed":
         return {**base, "state": "extracting",
