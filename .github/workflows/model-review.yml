@@ -39,6 +39,10 @@ on:
         description: "Opaque id set by the agent client so it can find this run"
         required: false
         type: string
+      suite_key:
+        description: "Private suite: object under model-review/suites/ in the EAR bucket (then set suite to 'private'); results stay in the bucket"
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -48,6 +52,13 @@ jobs:
     runs-on: ${{ startsWith(inputs.runner, '[') && fromJSON(inputs.runner) || (inputs.runner || 'ubuntu-latest') }}
     timeout-minutes: 90
     steps:
+      # Like ear-extract and ear-model-design: the bucket secrets are only used by the default branch's code.
+      - name: Private suites run only from the default branch
+        if: inputs.suite_key != '' && github.ref != format('refs/heads/{0}', github.event.repository.default_branch)
+        run: |
+          echo "::error::Private suites (suite_key) run only from the default branch, where the bucket secrets are used."
+          exit 1
+
       - uses: actions/checkout@v7
         with:
           sparse-checkout: model-review
@@ -62,3 +73,9 @@ jobs:
           endpoint: ${{ inputs.endpoint }}
           api-key: ${{ secrets.MODEL_REVIEW_API_KEY }}
           request-id: ${{ inputs.request_id }}
+          # Private suites only: the bucket the suite comes from and the results go to.
+          suite-key: ${{ inputs.suite_key }}
+          b2-region: ${{ inputs.suite_key && secrets.EAR_B2_REGION || '' }}
+          b2-bucket: ${{ inputs.suite_key && secrets.EAR_B2_BUCKET || '' }}
+          b2-key-id: ${{ inputs.suite_key && secrets.EAR_B2_KEY_ID || '' }}
+          b2-key: ${{ inputs.suite_key && secrets.EAR_B2_APPLICATION_KEY || '' }}

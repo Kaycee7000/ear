@@ -34,6 +34,10 @@
             "type": "integer",
             "description": "How long to wait for the verdict before returning a run_id to poll. Default 120.",
             "default": 120
+          },
+          "suite_key": {
+            "type": "string",
+            "description": "A private suite in the EAR bucket (model-review/suites/...yaml), for example one made to test a design. It replaces `suite`; its prompts, replies and results stay private."
           }
         },
         "required": ["model"]

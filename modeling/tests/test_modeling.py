@@ -13,7 +13,7 @@ from botocore.stub import Stubber
 from pydantic import ValidationError
 
 import jobs
-from design import Design, Task, synthesize
+from design import Design, Task, public_reason, synthesize
 
 TASK = Task.model_validate_json((Path(__file__).parents[1] / "examples" / "task.json").read_bytes())
 QUOTE = {"source_id": "capture", "quote": "stores each captured page"}
@@ -62,9 +62,22 @@ class ContractTests(unittest.TestCase):
             self.assertEqual(post.call_count, 2)
             post.reset_mock()
             post.side_effect = [completion("{}"), completion("{}")]
-            with self.assertRaisesRegex(ValueError, "both attempts"):
+            with self.assertRaisesRegex(ValueError, "both attempts") as caught:
                 synthesize(TASK)
             self.assertEqual(post.call_count, 2)
+            # The reason names the rule, so the public log can say why.
+            self.assertEqual(public_reason(caught.exception),
+                             "Model failed design validation on both attempts: "
+                             "the reply did not match the design JSON schema")
+
+    def test_public_reason_only_passes_fixed_sentences(self):
+        self.assertEqual(public_reason(ValueError("Give every component a unique ID.")),
+                         "Give every component a unique ID.")
+        for exc in (ValueError("quote 'secret evidence' not found"),
+                    ValueError("Model failed design validation on both attempts: secret evidence"),
+                    RuntimeError("Give every component a unique ID."),
+                    KeyError("EAR_B2_KEY_ID")):
+            self.assertIsNone(public_reason(exc))
 
 
 class WorkflowTests(unittest.TestCase):

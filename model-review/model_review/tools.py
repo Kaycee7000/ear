@@ -42,9 +42,10 @@ def set_client(client: ModelReviewClient | None) -> None:
 
 
 def review_model(model: str, suite: str = "smoke", backend: str = "ollama", endpoint: str | None = None,
-                 runner: str | None = None, wait_seconds: int = DEFAULT_WAIT_S) -> dict:
+                 runner: str | None = None, wait_seconds: int = DEFAULT_WAIT_S, suite_key: str | None = None) -> dict:
     try:
-        return _get_client().review_model(model, suite, backend, endpoint, runner, wait_s=max(0, wait_seconds))
+        return _get_client().review_model(model, suite, backend, endpoint, runner, wait_s=max(0, wait_seconds),
+                                          suite_key=suite_key or None)
     except ReviewError as exc:
         return {"state": "error", "message": str(exc)}
 
