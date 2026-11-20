@@ -34,7 +34,8 @@ def test_valid_design_passes_even_in_a_fence():
 
 
 @pytest.mark.parametrize("path,value,expect", [
-    (("components", 0, "evidence", 0, "quote"), "invented text", "not an exact excerpt"),
+    (("components", 0, "evidence", 0, "quote"), "invented text", "not an excerpt"),
+    (("components", 0, "evidence", 0, "quote"), "records their titles", "not an excerpt"),   # wrong source
     (("components", 0, "evidence", 0, "source_id"), "missing", "unknown source_id"),
     (("components", 1, "id"), "collector", "not unique"),
     (("components", 0, "id"), "bad id!", "id must match"),
@@ -49,6 +50,26 @@ def test_broken_designs_fail_with_a_reason(path, value, expect):
     node[path[-1]] = value
     check = result(reply)
     assert not check.passed and expect in check.detail
+
+
+def test_respaced_quotes_pass_like_the_modeling_tool():
+    # The modeling tool stores the source's exact text for a quote that differs only in spacing.
+    reply = copy.deepcopy(GOOD)
+    reply["components"][0]["evidence"][0]["quote"] = "stores  each\ncaptured page"
+    assert result(reply).passed
+    # Lines stitched with an invented one: passes because a real line of 12+ characters stands in.
+    reply["components"][0]["evidence"][0]["quote"] = "The collector stores each\nan invented middle line"
+    assert result(reply).passed
+    reply["components"][0]["evidence"][0]["quote"] = "an invented line here\nand another invented one"
+    assert not result(reply).passed
+    # A re-spaced quote must match one place only.
+    task = {"goal": "g", "sources": [{"id": "capture", "text": "a b. ab."}]}
+    messages = [{"role": "system", "content": "x"}, {"role": "user", "content": json.dumps(task)}]
+    ambiguous = {"components": [{"id": "c", "purpose": "p", "evidence": [{"source_id": "capture", "quote": "ab"}]}],
+                 "relationships": [], "assumptions": [], "open_questions": []}
+    assert result(ambiguous, messages).passed            # "ab" occurs exactly, so it is fine
+    ambiguous["components"][0]["evidence"][0]["quote"] = "a  b."
+    assert not result(ambiguous, messages).passed        # "ab." twice once spaces are gone: not one place
 
 
 def test_extra_keys_and_bad_shapes_fail():

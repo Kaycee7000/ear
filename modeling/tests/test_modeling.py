@@ -13,7 +13,7 @@ from botocore.stub import Stubber
 from pydantic import ValidationError
 
 import jobs
-from design import Design, Task, public_reason, synthesize
+from design import QUOTE_LIMIT, Design, Task, exact_quote, public_reason, synthesize
 
 TASK = Task.model_validate_json((Path(__file__).parents[1] / "examples" / "task.json").read_bytes())
 QUOTE = {"source_id": "capture", "quote": "stores each captured page"}
@@ -46,6 +46,39 @@ class ContractTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     Design.model_validate(obj).check_against(TASK)
 
+    def test_exact_quote_restores_the_source_spacing(self):
+        ghidra = "Decompiled main:\nulong main(int argc,char **argv,char **envp)\n\n{\n    return 0;\n}"
+        # What Qwen2.5-3B wrote on 2026-11-20: spaces after commas, one blank line dropped.
+        self.assertEqual(exact_quote("ulong main(int argc, char **argv, char **envp)\n{", ghidra),
+                         "ulong main(int argc,char **argv,char **envp)\n\n{")
+        # Lines it stitched together with an invented one in between: the longest real line stands in.
+        printing = 'x = calc(a);\n    sym.imp.printf("Yearly cost: %.2f\\n",x);\n    y = 1;'
+        stitched = 'sym.imp.printf("Yearly cost: %.2f\\n",x);\n    pcVar2 = "Yearly cost: %.2f\\n";\n    y = 1;'
+        self.assertEqual(exact_quote(stitched, printing), 'sym.imp.printf("Yearly cost: %.2f\\n",x);')
+        self.assertIsNone(exact_quote('pcVar2 = "invented line";\n    also invented here;', printing))
+        self.assertEqual(exact_quote("main:", ghidra), "main:")                       # exact quotes stay
+        self.assertIsNone(exact_quote("int main(void)", ghidra))                     # not in the source
+        self.assertIsNone(exact_quote("a  b", "a b and ab"))                         # two places once unspaced
+        self.assertIsNone(exact_quote(" \n ", ghidra))
+        words = [f"w{i:03d}" for i in range(100)]
+        long_source = " ".join(words)
+        restored = exact_quote("".join(words[:50]), long_source)       # 249 characters once re-spaced
+        self.assertEqual(len(restored), QUOTE_LIMIT)
+        self.assertIn(restored, long_source)
+
+    def test_respaced_quotes_are_stored_as_the_source_text(self):
+        obj = copy.deepcopy(OUTPUT)
+        obj["components"][0]["evidence"] = [{"source_id": "capture", "quote": "stores  each captured  page"}]
+        design = Design.model_validate(obj).with_exact_quotes(TASK)
+        design.check_against(TASK)
+        self.assertEqual(design.components[0].evidence[0].quote, "stores each captured page")
+        obj["components"][0]["evidence"] = [{"source_id": "capture", "quote": "stores every page"}]
+        with self.assertRaises(ValueError):   # a different word is still rejected
+            Design.model_validate(obj).with_exact_quotes(TASK).check_against(TASK)
+        obj["components"][0]["evidence"] = [{"source_id": "capture", "quote": "stores each\ncaptured page"}]
+        design = Design.model_validate(obj).with_exact_quotes(TASK)   # re-spaced across a line break
+        self.assertEqual(design.components[0].evidence[0].quote, "stores each captured page")
+
     def test_rejects_invalid_input(self):
         for sources in [[], [TASK.sources[0]] * 2, [{"id": "a", "text": "💡" * 3000}]]:
             with self.subTest(sources=len(sources)), self.assertRaises(ValidationError):
@@ -60,6 +93,12 @@ class ContractTests(unittest.TestCase):
             post.side_effect = [completion("{}"), completion(json.dumps(OUTPUT))]
             self.assertEqual(synthesize(TASK), Design.model_validate(OUTPUT))
             self.assertEqual(post.call_count, 2)
+            post.reset_mock()
+            respaced = copy.deepcopy(OUTPUT)
+            respaced["relationships"][0]["evidence"] = [{"source_id": "capture", "quote": "stores each  captured page"}]
+            post.side_effect = [completion(json.dumps(respaced))]
+            self.assertEqual(synthesize(TASK), Design.model_validate(OUTPUT))   # fixed on the first attempt
+            self.assertEqual(post.call_count, 1)
             post.reset_mock()
             post.side_effect = [completion("{}"), completion("{}")]
             with self.assertRaisesRegex(ValueError, "both attempts") as caught:
