@@ -130,6 +130,31 @@ def test_bad_requests_are_refused_before_anything_is_written(world, kwargs):
     assert not world["dispatches"] and not FakeStore.objects
 
 
+def test_a_run_github_does_not_list_yet_counts_as_starting(world):
+    import httpx
+
+    def answer(code):
+        def github(method, path, **kwargs):
+            request = httpx.Request(method, "https://api.github.com" + path)
+            raise httpx.HTTPStatusError(f"{code}", request=request, response=httpx.Response(code, request=request))
+        return github
+
+    clock = [1000.0]
+    client._unlisted.clear()
+    with patch.object(client, "_now", lambda: clock[0]):
+        with patch.object(client.jobs, "github", answer(404)):
+            first = client.status(601)
+            assert first["state"] == "extracting" and "not listed" in first["message"]
+            clock[0] += client.UNLISTED_GRACE_S - 1
+            assert client.status(601)["state"] == "extracting"
+            clock[0] += 2
+            with pytest.raises(ValueError, match="no run 601"):
+                client.status(601)
+        with patch.object(client.jobs, "github", answer(500)), pytest.raises(httpx.HTTPStatusError):
+            client.status(602)                         # other errors still surface
+    assert client.status(501)["state"] == "extracting"   # a listed run: the normal state
+
+
 def test_other_workflows_are_refused(world):
     world["run"]["path"] = ".github/workflows/model-review.yml"
     with pytest.raises(ValueError):
