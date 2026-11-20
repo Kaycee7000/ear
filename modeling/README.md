@@ -5,7 +5,14 @@ worker uses Qwen2.5-3B-Instruct through llama.cpp to produce components,
 relationships, assumptions, and open questions. Each component and relationship
 must cite a source ID and an exact excerpt. The worker checks that IDs are
 unique, relationship endpoints exist, and each excerpt occurs in its source.
-Review whether the cited text supports the interpretation.
+Small models copy imperfectly. Qwen2.5-3B re-spaces code (Ghidra's
+`int argc,char **argv` comes back as `int argc, char **argv`), and when it
+stitches several lines of decompiled code together it invents plausible lines
+in between. Before the check, a quote that matches its source apart from
+whitespace, at exactly one place, is replaced by the source's own text.
+Otherwise a multi-line quote is cut down to its longest line (12+ characters)
+that really occurs in the source. Stored excerpts are always exact. Review
+whether the cited text supports the interpretation.
 
 ## Run locally
 

@@ -147,6 +147,21 @@ _EAR_ID = re.compile(r"^[A-Za-z0-9_-]{1,48}$")
 _EAR_LIMITS = {"components": (1, 16), "relationships": (0, 24), "assumptions": (0, 12), "open_questions": (0, 12)}
 
 
+def _unspaced_once(quote: str, text: str) -> bool:
+    target, flat = "".join(quote.split()), "".join(text.split())
+    at = flat.find(target)
+    return bool(target) and at >= 0 and flat.find(target, at + 1) < 0
+
+
+def _respaced_excerpt(quote: str, text: str) -> bool:
+    """modeling/design.py's exact_quote accepts the quote: it copies `text` apart from whitespace at exactly one
+    place, or it is a multi-line quote with a real line of 12+ characters (the tool then stores that exact text)."""
+    if _unspaced_once(quote, text):
+        return True
+    return any(len(line.strip()) >= 12 and (line.strip() in text or _unspaced_once(line, text))
+               for line in quote.splitlines())
+
+
 def ear_design_problem(reply: Any, sources: dict[str, str]) -> str | None:
     """Same rules as modeling/design.py (Design schema + check_against). Returns the first problem, or None."""
     if not isinstance(reply, dict):
@@ -174,8 +189,8 @@ def ear_design_problem(reply: Any, sources: dict[str, str]) -> str | None:
                 return f"{where}: quote must be 1-160 characters"
             if sid not in sources:
                 return f"{where}: unknown source_id {sid!r}"
-            if quote.strip() not in sources[sid]:
-                return f"{where}: quote is not an exact excerpt of source {sid!r}: {quote.strip()[:80]!r}"
+            if quote.strip() not in sources[sid] and not _respaced_excerpt(quote, sources[sid]):
+                return f"{where}: quote is not an excerpt of source {sid!r}, even ignoring spacing: {quote.strip()[:80]!r}"
         return None
 
     ids = []

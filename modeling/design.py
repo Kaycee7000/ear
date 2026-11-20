@@ -42,7 +42,42 @@ class Task(Evidence):
 
 
 # Short quotes keep designs within the output limit: small models otherwise copy whole sources.
-Quote = Annotated[str, StringConstraints(min_length=1, max_length=160)]
+QUOTE_LIMIT = 160
+Quote = Annotated[str, StringConstraints(min_length=1, max_length=QUOTE_LIMIT)]
+MIN_LINE = 12   # shortest line of a stitched quote that may stand in for it (not just "{" or "return 0;")
+
+
+def _unspaced_match(quote: str, text: str) -> str | None:
+    """The text of `text` equal to `quote` apart from whitespace, if it occurs there exactly once."""
+    target = "".join(quote.split())
+    if not target:
+        return None
+    keep = [i for i, ch in enumerate(text) if not ch.isspace()]
+    flat = "".join(text[i] for i in keep)
+    at = flat.find(target)
+    if at < 0 or flat.find(target, at + 1) >= 0:
+        return None
+    return text[keep[at]:keep[at + len(target) - 1] + 1]
+
+
+def exact_quote(quote: str, text: str) -> str | None:
+    """The source's own text for a quote a small model copied imperfectly, or None if it is not in the source.
+
+    Measured with Qwen2.5-3B on decompiled code (2026-11-20): it re-spaces what it copies (Ghidra's
+    `int argc,char **argv` comes back as `int argc, char **argv`), and when it stitches several lines together
+    it invents plausible lines in between. So: a quote equal to the source apart from whitespace, at exactly one
+    place, becomes that text; otherwise a multi-line quote is cut down to its longest line that really occurs in
+    the source. Every stored quote is verbatim source text.
+    """
+    if quote in text:
+        return quote
+    span = _unspaced_match(quote, text)
+    if span is not None:
+        return span[:QUOTE_LIMIT]
+    real = [line.strip() if line.strip() in text else _unspaced_match(line, text)
+            for line in quote.splitlines() if len(line.strip()) >= MIN_LINE]
+    real = [line for line in real if line]
+    return max(real, key=len)[:QUOTE_LIMIT] if real else None
 
 
 class Citation(Record):
@@ -81,6 +116,21 @@ class Design(Record):
             for cite in item.evidence:
                 if cite.source_id not in sources or cite.quote not in sources[cite.source_id]:
                     raise ValueError("Copy each quote exactly from the source identified by source_id.")
+
+    def with_exact_quotes(self, task: Task) -> "Design":
+        """This design with each re-spaced quote replaced by its source's exact text (see exact_quote).
+        Quotes that differ in anything but whitespace, or match in more than one place, are left for
+        check_against to reject."""
+        sources = {s.id: s.text for s in task.sources}
+        data = self.model_dump()
+        changed = False
+        for group in ("components", "relationships"):
+            for item in data[group]:
+                for cite in item["evidence"]:
+                    exact = exact_quote(cite["quote"], sources.get(cite["source_id"], ""))
+                    if exact is not None and exact != cite["quote"]:
+                        cite["quote"], changed = exact, True
+        return Design.model_validate(data) if changed else self
 
 
 BOTH_ATTEMPTS = "Model failed design validation on both attempts"
@@ -145,7 +195,7 @@ def synthesize(task: Task) -> Design:
             if choice.get("finish_reason") == "length":
                 raise ValueError("Design exceeded output limit. Narrow the goal or evidence.")
             try:
-                design = Design.model_validate_json(answer)
+                design = Design.model_validate_json(answer).with_exact_quotes(task)
                 design.check_against(task)
                 return design
             except ValueError as exc:
