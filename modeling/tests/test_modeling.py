@@ -13,7 +13,7 @@ from botocore.stub import Stubber
 from pydantic import ValidationError
 
 import jobs
-from design import QUOTE_LIMIT, Design, Task, exact_quote, public_reason, synthesize
+from design import QUOTE_LIMIT, Design, DesignFailed, Task, exact_quote, public_reason, synthesize
 
 TASK = Task.model_validate_json((Path(__file__).parents[1] / "examples" / "task.json").read_bytes())
 QUOTE = {"source_id": "capture", "quote": "stores each captured page"}
@@ -108,6 +108,18 @@ class ContractTests(unittest.TestCase):
             self.assertEqual(public_reason(caught.exception),
                              "Model failed design validation on both attempts: "
                              "the reply did not match the design JSON schema")
+            self.assertEqual([a["answer"] for a in caught.exception.attempts], ["{}", "{}"])
+            # A design that parses but cites an invented quote: the private detail names that quote.
+            invented = copy.deepcopy(OUTPUT)
+            invented["components"][1]["evidence"] = [{"source_id": "index", "quote": "an invented quote here"}]
+            post.reset_mock()
+            post.side_effect = [completion(json.dumps(invented))] * 2
+            with self.assertRaises(DesignFailed) as caught:
+                synthesize(TASK)
+            detail = caught.exception.attempts[1]
+            self.assertEqual(detail["reason"], "Copy each quote exactly from the source identified by source_id.")
+            self.assertEqual(detail["unmatched_quotes"],
+                             [{"item": "bucket", "source_id": "index", "quote": "an invented quote here"}])
 
     def test_public_reason_only_passes_fixed_sentences(self):
         self.assertEqual(public_reason(ValueError("Give every component a unique ID.")),
@@ -119,12 +131,43 @@ class ContractTests(unittest.TestCase):
             self.assertIsNone(public_reason(exc))
 
 
+def bucket(objects):
+    """A Store stand-in over a dict that, like B2, raises ClientError(NoSuchKey) for a missing object."""
+    def read(key, *args, **kwargs):
+        if key not in objects:
+            raise ClientError({"Error": {"Code": "NoSuchKey"}}, "GetObject")
+        return objects[key]
+    store = Mock()
+    store.read.side_effect = read
+    store.write.side_effect = lambda key, obj, *args, **kwargs: objects.__setitem__(key, obj)
+    return store
+
+
 class WorkflowTests(unittest.TestCase):
+    def test_failed_design_is_recorded_privately_and_explained(self):
+        objects = {"ear-modeling/requests/" + "a" * 32 + ".json": TASK.model_dump_json().encode()}
+        attempts = [{"reason": "Copy each quote exactly from the source identified by source_id.",
+                     "answer": "{...}", "unmatched_quotes": [{"item": "collector", "source_id": "capture",
+                                                              "quote": "invented"}]}] * 2
+        failed = DesignFailed("Model failed design validation on both attempts: Copy each quote exactly from the "
+                              "source identified by source_id.", attempts)
+        run = {"status": "completed", "conclusion": "failure", "html_url": "https://github.com/example",
+               "run_attempt": 1, "path": ".github/workflows/ear-model-design.yml"}
+        with patch("jobs.Store", return_value=bucket(objects)), patch("jobs.synthesize", side_effect=failed), \
+             patch("jobs.github", return_value=run):
+            with self.assertRaises(DesignFailed):
+                jobs.work("a" * 32, 101, 1)
+            record = json.loads(objects["ear-modeling/results/101/1/failure.json"])
+            self.assertEqual(record["attempts"][0]["unmatched_quotes"][0]["quote"], "invented")
+            self.assertNotIn("ear-modeling/results/101/1/design.json", objects)
+            state = jobs.status(101)
+            self.assertEqual(state["result_error"], str(failed))
+            self.assertEqual(state["failure_key"], "ear-modeling/results/101/1/failure.json")
+        self.assertEqual(public_reason(failed), str(failed))   # fixed sentence: fine for the public log
+
     def test_submit_execute_poll_rerun(self):
         objects = {"ear-modeling/evidence/capture.json": TASK.model_dump_json(exclude={"goal"}).encode()}
-        store = Mock()
-        store.read.side_effect = objects.__getitem__
-        store.write.side_effect = objects.__setitem__
+        store = bucket(objects)
         run = {"status": "queued", "conclusion": None, "html_url": "https://github.com/example",
                "run_attempt": 1, "path": ".github/workflows/ear-model-design.yml"}
         with patch.dict(os.environ, EAR_GITHUB_TOKEN="test"), patch("jobs.Store", return_value=store), \

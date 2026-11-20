@@ -145,9 +145,19 @@ CHECK_MESSAGES = frozenset({
 })
 
 
+class DesignFailed(ValueError):
+    """Both attempts failed validation. Its message is a fixed sentence (public_reason); `attempts` holds each
+    raw model answer, the rule it broke and the quotes that matched no source, for a private record only
+    (jobs.py writes it to the bucket, never to a log)."""
+
+    def __init__(self, message: str, attempts: list[dict]):
+        super().__init__(message)
+        self.attempts = attempts
+
+
 def public_reason(exc: Exception) -> str | None:
     """The failure as a fixed sentence fit for a public log, or None when it could carry private text."""
-    if type(exc) is not ValueError:
+    if type(exc) not in (ValueError, DesignFailed):   # not pydantic's ValidationError, which can quote input
         return None
     message = str(exc)
     head, _, tail = message.partition(": ")
@@ -181,6 +191,8 @@ def synthesize(task: Task) -> Design:
     # CPU servers need longer than a GPU for a full design; cpu-worker.sh raises this.
     timeout = float(os.getenv("EAR_MODEL_TIMEOUT", "240"))
     with httpx.Client(base_url=endpoint, timeout=timeout, trust_env=False, headers=headers) as client:
+        attempts = []   # private failure detail for jobs.py: raw answers, rules broken, unmatched quotes
+        sources = {s.id: s.text for s in task.sources}
         for attempt in range(2):
             response = client.post("/v1/chat/completions", json={
                 "model": os.getenv("EAR_MODEL_NAME", "ear-model"),
@@ -194,15 +206,22 @@ def synthesize(task: Task) -> Design:
             answer = choice["message"]["content"]
             if choice.get("finish_reason") == "length":
                 raise ValueError("Design exceeded output limit. Narrow the goal or evidence.")
+            design = None
             try:
                 design = Design.model_validate_json(answer).with_exact_quotes(task)
                 design.check_against(task)
                 return design
             except ValueError as exc:
+                reason = SCHEMA_MISMATCH if isinstance(exc, ValidationError) else str(exc)
+                unmatched = [] if design is None else [
+                    {"item": getattr(item, "id", None) or f"{item.source}->{item.target}",
+                     "source_id": cite.source_id, "quote": cite.quote}
+                    for item in [*design.components, *design.relationships] for cite in item.evidence
+                    if exact_quote(cite.quote, sources.get(cite.source_id, "")) is None]
+                attempts.append({"reason": reason, "answer": answer, "unmatched_quotes": unmatched})
                 if attempt:
-                    # Name the rule that failed (fixed sentences only: never evidence or model output).
-                    reason = SCHEMA_MISMATCH if isinstance(exc, ValidationError) else str(exc)
-                    raise ValueError(f"{BOTH_ATTEMPTS}: {reason}") from None
+                    # The message names the rule (fixed sentences only); the detail stays in `attempts`.
+                    raise DesignFailed(f"{BOTH_ATTEMPTS}: {reason}", attempts) from None
                 feedback = "Match the requested JSON schema." if isinstance(exc, ValidationError) else str(exc)
                 # Keep the retry inside the same input budget even for malformed output.
                 messages.append({"role": "user", "content": "Generate the design again. " + feedback})
