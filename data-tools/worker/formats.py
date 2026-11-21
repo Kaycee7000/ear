@@ -18,6 +18,10 @@ from ear_data.plan import MAX_COLS, MAX_FILE, DataError
 
 MAX_INPUT_ROWS = 1_000_000
 MAX_DECODED = 512 * 1024**2
+# pyarrow's own missing-value markers ("", "NA", "NULL", "n/a", "nan", ...) plus "?", which many public datasets use
+# for a gap. Without it one "?" makes the whole column text and every sum or average needs TRY_CAST: an agent lost
+# about two hours to that on a household power file. Text columns keep a literal "?" (strings_can_be_null is off).
+CSV_NULLS = (*acsv.ConvertOptions().null_values, "?")
 
 
 def excel_table(path):
@@ -58,7 +62,9 @@ def load_table(path, remaining):
         else:
             if fmt in ("csv", "tsv"):
                 stream = acsv.open_csv(
-                    path, parse_options=acsv.ParseOptions(delimiter="," if fmt == "csv" else "\t")
+                    path,
+                    parse_options=acsv.ParseOptions(delimiter="," if fmt == "csv" else "\t"),
+                    convert_options=acsv.ConvertOptions(null_values=CSV_NULLS),
                 )
                 schema, batches = stream.schema, stream
             elif fmt == "parquet":

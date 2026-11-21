@@ -180,6 +180,18 @@ class Pipeline(unittest.TestCase):
             ],
         )
 
+    def test_question_mark_is_a_missing_number(self):
+        # The household power export marks gaps with "?": numbers must stay numbers, text keeps its "?".
+        path = self.src / "power.csv"
+        path.write_text("Date,Global_active_power,Note\n16/12/2006,4.25,ok\n21/12/2006,?,?\n22/12/2006,1.5,\n")
+        loaded = load_table(path, 1024**2)
+        self.assertEqual(str(loaded.schema.field("Global_active_power").type), "double")
+        self.assertEqual(loaded.column("Global_active_power").to_pylist(), [4.25, None, 1.5])
+        self.assertEqual(loaded.column("Note").to_pylist(), ["ok", "?", ""])
+        sql = "SELECT COUNT(Global_active_power) AS readings, SUM(Global_active_power) AS kw FROM power"
+        plan = Request(datasets={"power": self.handle}, plan={"sql": sql}).plan
+        self.assertEqual(analyze({"power": loaded}, plan).to_pylist(), [{"readings": 2, "kw": 5.75}])
+
     def test_out_of_scope_queries_and_cardinality(self):
         table = pa.table({"x": list(range(501))})
         for sql in (
