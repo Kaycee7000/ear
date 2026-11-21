@@ -1,10 +1,29 @@
+import os
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 import httpx
 
 from .contract import Issue
+
+
+LOOPBACK = {"127.0.0.1", "localhost", "::1"}
+
+
+def api_url():
+    """GitHub's REST API, or an Actions-compatible runner on this machine's loopback (EAR_GITHUB_API_URL).
+
+    Only these two kinds of address are accepted, so the token in the Authorization header can't be sent anywhere
+    else by a mistyped setting. A local runner must answer with GitHub's canonical run URLs (see mapping)."""
+    value = os.environ.get("EAR_GITHUB_API_URL", "https://api.github.com").rstrip("/")
+    parts = urlsplit(value)
+    if value == "https://api.github.com" or (
+        parts.scheme == "http" and parts.hostname in LOOPBACK and parts.port and parts.path in ("", "/")
+        and not parts.query and not parts.username
+    ):
+        return value
+    raise ValueError("EAR_GITHUB_API_URL must be https://api.github.com or http://127.0.0.1:<port>")
 
 
 def retry_delay(headers):
@@ -26,7 +45,7 @@ class GitHub:
     def __init__(self, cfg, token, transport=None):
         self.cfg = cfg
         self.http = httpx.AsyncClient(
-            base_url=f"https://api.github.com/repos/{cfg.repo}/actions/",
+            base_url=f"{api_url()}/repos/{cfg.repo}/actions/",
             headers={
                 "Authorization": f"Bearer {token}",
                 "Accept": "application/vnd.github+json",
