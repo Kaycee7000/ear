@@ -3,6 +3,7 @@ import json
 import os
 import re
 from contextlib import closing
+from urllib.parse import urlsplit
 from uuid import UUID, uuid4
 
 import boto3
@@ -63,7 +64,20 @@ def repo_api() -> str:
     repo = os.getenv("EAR_GITHUB_REPO", "Kaycee7000/ear")
     if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repo):
         raise ValueError("EAR_GITHUB_REPO must be owner/repo.")
-    return f"https://api.github.com/repos/{repo}/actions"
+    return f"{api_url()}/repos/{repo}/actions"
+
+
+def api_url() -> str:
+    """GitHub's REST API, or an Actions-compatible runner on this machine's loopback (EAR_GITHUB_API_URL); nothing
+    else, so the token can't be sent anywhere else by a mistyped setting."""
+    value = os.getenv("EAR_GITHUB_API_URL", "https://api.github.com").rstrip("/")
+    parts = urlsplit(value)
+    if value == "https://api.github.com" or (
+        parts.scheme == "http" and parts.hostname in {"127.0.0.1", "localhost", "::1"} and parts.port
+        and parts.path in ("", "/") and not parts.query and not parts.username
+    ):
+        return value
+    raise ValueError("EAR_GITHUB_API_URL must be https://api.github.com or http://127.0.0.1:<port>")
 
 
 def github(method: str, path: str, **kwargs) -> dict:
